@@ -97,6 +97,8 @@ T
 
 `DO` runs its body at least once and steps until the index reaches the limit. `BEGIN ... UNTIL` repeats until the flag is true; `BEGIN ... WHILE ... REPEAT` tests at the top. `IF` consumes a flag and compiles a conditional branch — inside a definition, `IF`, `ELSE`, `THEN`, `BEGIN`, `DO` and their partners are immediate words that execute at compile time and patch the branch offsets into the definition as it is being built. That mechanism, more than any other, is what makes a Forth compiler small: control flow is just words that compile other words.
 
+A word the system does not know — inside a definition or out — prints `?` and returns to the prompt. If it happened inside a definition, the half-built definition is discarded, so a mistyped name costs nothing but the typing.
+
 `CREATE` and `HERE` extend the language to data:
 
 ```
@@ -104,10 +106,10 @@ CREATE TABLE 3 , 1 , 4 , 1 , 5 ,
 TABLE @ .
 3 
 TABLE 2 + @ .
-4 
+1 
 ```
 
-`CREATE` makes a word whose body is whatever you allot next; `,` compiles a number into the dictionary at `HERE`. This is the whole story of data structures in Forth, and in 1973 it was a perfectly ordinary way to build a table.
+`CREATE` makes a word whose body is whatever you allot next; `,` compiles a number into the dictionary at `HERE`, and the next number lives two bytes further on, since a cell is a word. This is the whole story of data structures in Forth, and in 1973 it was a perfectly ordinary way to build a table.
 
 ## Inside
 
@@ -136,4 +138,4 @@ Everything above `34000` is stack headroom, and the dictionary can grow for anot
 
 ## What it is not
 
-It is a demonstration, not a distribution. There is no disk, no file system, no editor beyond backspace, no division, and no floating point; definitions are lost when the power goes off, as they would have been on a paper-tape machine. What it does show is the claim this fork was made to test: the same emulated hardware that runs Moonlander instruction for instruction can boot a high-level language, give you a prompt, and compile your words — bare metal, in 8K words, on a machine whose only output device is a vector display.
+It is a demonstration, not a distribution. There is no disk, no file system, no editor beyond backspace, no division, and no floating point; word names are capped at 17 characters and input lines at 64, the size of their buffers; definitions are lost when the power goes off, as they would have been on a paper-tape machine. What it does show is the claim this fork was made to test: the same emulated hardware that runs Moonlander instruction for instruction can boot a high-level language, give you a prompt, and compile your words — bare metal, in 8K words, on a machine whose only output device is a vector display.
