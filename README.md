@@ -69,7 +69,7 @@ The default view models the GT40's VR14 monitor and its P39 phosphor, a long-per
 |---|---|
 | [`journal/`](journal/) | The working record, in order. Start here. |
 | [`reference/original/`](reference/original/) | The surviving material: the 1973 listing, an RT-11 adaptation, a binary of another build whose source is lost (the Mare Assabet build, named after its greeting), and the 1969 FOCAL game it descends from. |
-| [`reference/hardware-docs/`](reference/hardware-docs/) | DEC's manuals for the GT40, VT11, VR14 and PDP-11. |
+| [`reference/hardware-docs/`](reference/hardware-docs/) | Where to find DEC's manuals for the GT40, VT11, VR14 and PDP-11, which are not included. |
 | [`docs/hardware.md`](docs/hardware.md) | The GT40 as modelled: each part, and whether each figure comes from a manual, a reading of one, or an assumption. |
 | [`reconstruction/`](reconstruction/) | The reconstructed source of the Mare Assabet build, which assembles to the surviving binary exactly. |
 | [`oracle/`](oracle/) | Tools used to establish ground truth: the 1973 build, the alignment of the two builds, and a processor test against simh. |

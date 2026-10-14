@@ -2,3 +2,5 @@ __pycache__/
 *.pyc
 reconstruction/out/
 target/
+reference/hardware-docs/*
+!reference/hardware-docs/README.md

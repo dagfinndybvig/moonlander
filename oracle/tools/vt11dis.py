@@ -14,7 +14,8 @@ Control words have bit 15 set. Bits 14-11 select the instruction:
   1111  load status register B: graphplot increment (6 enables 5-0)
 Data words (bit 15 clear) are interpreted according to the current mode.
 
-Source: DEC VT11 instruction summary, reference/hardware-docs/VT-11 Instruction Set.txt
+Source: Al Kossow's VT11 instruction set summary (1993), listed in
+reference/hardware-docs/README.md.
 """
 
 MODES = ["CHAR", "SVEC", "LVEC", "POINT", "GRAPHX", "GRAPHY", "RELPT", "SPARE7"]

@@ -13,7 +13,7 @@ The same tags mark the constants in the code (`MODEL` and `READING` comments), s
 
 ## Sources
 
-All are in [`reference/hardware-docs/`](../reference/hardware-docs/).
+Links to public copies, and checksums of the copies used, are in [`reference/hardware-docs/`](../reference/hardware-docs/).
 
 | Short name | Document |
 |---|---|

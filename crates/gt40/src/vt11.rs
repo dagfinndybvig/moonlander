@@ -6,7 +6,7 @@
 //! with time stamps, so a renderer can reproduce phosphor persistence and a
 //! test can check geometry exactly.
 //!
-//! Sources, in `reference/hardware-docs`:
+//! Sources, listed in `reference/hardware-docs/README.md`:
 //! - GT40/GT42 User's Guide (EK-GT40-OP-002, Feb 1975), chapter 4: registers,
 //!   stop interrupt, light pen interaction, edge violations, flicker.
 //! - VT11 Graphic Display Processor manual (EK-VT11-TM-001, 1974), chapter 2:

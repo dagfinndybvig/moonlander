@@ -14,7 +14,7 @@ Recovered material, with provenance:
 | `reference/original/rtlem-rt11.mac` | Same repository | Al Kossow's RT-11 adaptation. 65 changed lines against the original after whitespace normalisation. |
 | `reference/original/lunar-later-nosource.lda` | Same repository, `Binaries/Moonlander/Lunar` | A later build distributed with the GT40 simulator. No source survives for it. |
 | `reference/original/lunar-1969.fcl` | Same repository | Jim Storer's 1969 FOCAL text game, the ancestor. |
-| `reference/hardware-docs/*` | Same repository | DEC VT11 and GT44 documentation, PDP-11 references. |
+| `reference/hardware-docs/*` | Same repository | DEC VT11 and GT44 documentation, PDP-11 references. Not redistributed here: `reference/hardware-docs/README.md` links to them. |
 
 SHA-256 at time of capture:
 
