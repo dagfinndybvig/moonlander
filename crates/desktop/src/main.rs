@@ -209,62 +209,22 @@ impl App {
         el.exit();
     }
 
-    fn key(&mut self, el: &ActiveEventLoop, code: KeyCode, pressed: bool, repeat: bool) {
+    fn key(&mut self, el: &ActiveEventLoop, code: KeyCode, pressed: bool, repeat: bool, text: Option<char>) {
         let shift = self.mods.shift_key();
         let fresh = pressed && !repeat;
         // An image of our own gets the keyboard as console input, as
-        // the LK40 would have fed it, instead of pen moves.
+        // the LK40 would have fed it, instead of pen moves.  Characters
+        // come from the text the layout produced, so they are what the
+        // key meant to type, not what a US layout would have put there;
+        // Enter and Backspace are positions, as terminals always had.
         if self.cfg.image.is_some() && pressed && !repeat {
             let c = match code {
                 KeyCode::Enter => Some(0o15),
                 KeyCode::Backspace => Some(0o177),
-                KeyCode::Space => Some(b' '),
-                KeyCode::KeyA => Some(if shift { b'A' } else { b'a' }),
-                KeyCode::KeyB => Some(if shift { b'B' } else { b'b' }),
-                KeyCode::KeyC => Some(if shift { b'C' } else { b'c' }),
-                KeyCode::KeyD => Some(if shift { b'D' } else { b'd' }),
-                KeyCode::KeyE => Some(if shift { b'E' } else { b'e' }),
-                KeyCode::KeyF => Some(if shift { b'F' } else { b'f' }),
-                KeyCode::KeyG => Some(if shift { b'G' } else { b'g' }),
-                KeyCode::KeyH => Some(if shift { b'H' } else { b'h' }),
-                KeyCode::KeyI => Some(if shift { b'I' } else { b'i' }),
-                KeyCode::KeyJ => Some(if shift { b'J' } else { b'j' }),
-                KeyCode::KeyK => Some(if shift { b'K' } else { b'k' }),
-                KeyCode::KeyL => Some(if shift { b'L' } else { b'l' }),
-                KeyCode::KeyM => Some(if shift { b'M' } else { b'm' }),
-                KeyCode::KeyN => Some(if shift { b'N' } else { b'n' }),
-                KeyCode::KeyO => Some(if shift { b'O' } else { b'o' }),
-                KeyCode::KeyP => Some(if shift { b'P' } else { b'p' }),
-                KeyCode::KeyQ => Some(if shift { b'Q' } else { b'q' }),
-                KeyCode::KeyR => Some(if shift { b'R' } else { b'r' }),
-                KeyCode::KeyS => Some(if shift { b'S' } else { b's' }),
-                KeyCode::KeyT => Some(if shift { b'T' } else { b't' }),
-                KeyCode::KeyU => Some(if shift { b'U' } else { b'u' }),
-                KeyCode::KeyV => Some(if shift { b'V' } else { b'v' }),
-                KeyCode::KeyW => Some(if shift { b'W' } else { b'w' }),
-                KeyCode::KeyX => Some(if shift { b'X' } else { b'x' }),
-                KeyCode::KeyY => Some(if shift { b'Y' } else { b'y' }),
-                KeyCode::KeyZ => Some(if shift { b'Z' } else { b'z' }),
-                KeyCode::Digit0 => Some(b'0'),
-                KeyCode::Digit1 => Some(b'1'),
-                KeyCode::Digit2 => Some(b'2'),
-                KeyCode::Digit3 => Some(b'3'),
-                KeyCode::Digit4 => Some(b'4'),
-                KeyCode::Digit5 => Some(b'5'),
-                KeyCode::Digit6 => Some(b'6'),
-                KeyCode::Digit7 => Some(b'7'),
-                KeyCode::Digit8 => Some(b'8'),
-                KeyCode::Digit9 => Some(b'9'),
-                KeyCode::Minus => Some(b'-'),
-                KeyCode::Equal => Some(b'='),
-                KeyCode::Comma => Some(b','),
-                KeyCode::Period => Some(b'.'),
-                KeyCode::Semicolon => Some(b';'),
-                KeyCode::Slash => Some(b'/'),
-                KeyCode::BracketLeft => Some(b'('),
-                KeyCode::BracketRight => Some(b')'),
-                KeyCode::Quote => Some(0o47),
-                _ => None,
+                _ => match text {
+                    Some(c) if c >= ' ' && c <= '~' => Some(c as u8),
+                    _ => None,
+                },
             };
             if let Some(c) = c {
                 self.link.lock().unwrap().text.push(c);
@@ -440,7 +400,8 @@ impl ApplicationHandler for App {
             }
             WindowEvent::KeyboardInput { event, .. } => {
                 if let PhysicalKey::Code(code) = event.physical_key {
-                    self.key(el, code, event.state == ElementState::Pressed, event.repeat);
+                    let text = event.text.as_deref().and_then(|s| s.chars().next());
+                    self.key(el, code, event.state == ElementState::Pressed, event.repeat, text);
                 }
             }
             WindowEvent::CursorMoved { position, .. } => {
