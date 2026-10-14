@@ -29,22 +29,22 @@ fn main() {
     let window = 1_000_000.0 / 30.0; // one 1/30 s slice of beam activity
     for (i, &secs) in times.iter().enumerate() {
         let until = secs * 1e6;
-        while m.t < until && !m.halted {
-            m.run_until((m.t + 50_000.0).min(until));
+        while m.bus.t < until && !m.halted {
+            m.run_until((m.bus.t + 50_000.0).min(until));
             // keep only recent beam history
-            let cut = m.t - window;
-            m.vt11.out.retain(|b| match *b {
+            let cut = m.bus.t - window;
+            m.bus.vt11.out.retain(|b| match *b {
                 Beam::Dot { t, .. } => t >= cut,
                 Beam::Line { t1, .. } => t1 >= cut,
             });
         }
         let path = format!("{prefix}-{i}.png");
-        save(&path, &m.vt11.out);
-        let w = |a: u16| m.mem[(a >> 1) as usize] as i16;
+        save(&path, &m.bus.vt11.out);
+        let w = |a: u16| m.bus.mem[(a >> 1) as usize] as i16;
         eprintln!(
             "t={:.2}s pc={:06o} halted={} instr={} ticks={} | host<-{:?} | FUEL={} VERDIS={} HORDIS={} VERVEL={} HORVEL={} CLOCK={} -> {path}",
-            m.t / 1e6, m.r[7], m.halted, m.instructions, m.clock.ticks,
-            m.host.as_ref().map(|h| String::from_utf8_lossy(&h.sent).into_owned()),
+            m.bus.t / 1e6, m.r[7], m.halted, m.instructions, m.bus.clock.ticks,
+            m.bus.host.as_ref().map(|h| String::from_utf8_lossy(&h.sent).into_owned()),
             w(0o150), w(0o136), w(0o134), w(0o130), w(0o124), w(0o156)
         );
     }

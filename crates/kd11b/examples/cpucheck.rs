@@ -49,15 +49,15 @@ fn main() {
         let mut m = Machine::new(0o40000 / 2, 60.0); // 8K words, a stock GT40
         // CPU-only configuration: no DMA or interrupt sources besides the
         // clock and console, matching run_simh.py's simh configuration.
-        m.has_vt11 = false;
-        m.host = None;
+        m.bus.has_vt11 = false;
+        m.bus.host = None;
         for &(v, h) in &c.vec {
-            m.mem[(v >> 1) as usize] = h;
-            m.mem[(v >> 1) as usize + 1] = 0;
+            m.bus.mem[(v >> 1) as usize] = h;
+            m.bus.mem[(v >> 1) as usize + 1] = 0;
         }
         for (base, words) in &c.mem {
             for (i, &w) in words.iter().enumerate() {
-                m.mem[(*base >> 1) as usize + i] = w;
+                m.bus.mem[(*base >> 1) as usize + i] = w;
             }
         }
         m.r.copy_from_slice(&c.r);
@@ -65,7 +65,7 @@ fn main() {
         let mut steps = 0;
         let trace = std::env::var("TRACE").ok().and_then(|v| v.parse::<u32>().ok()) == Some(c.n);
         if trace {
-            m.access_log = Some(Vec::new());
+            m.bus.access_log = Some(Vec::new());
         }
         while !m.halted && steps < 20_000 {
             let (pc, psw) = (m.r[7], m.psw);
@@ -73,7 +73,7 @@ fn main() {
             if trace {
                 eprintln!("{pc:06o} {:06o}  psw {psw:03o} -> {:03o}  regs {:?}", m.last_insn, m.psw,
                           m.r.iter().map(|r| format!("{r:o}")).collect::<Vec<_>>());
-                for (w, a, v) in m.access_log.as_mut().unwrap().drain(..) {
+                for (w, a, v) in m.bus.access_log.as_mut().unwrap().drain(..) {
                     eprintln!("        {} {a:06o} {v:06o}", if w { "W" } else { "R" });
                 }
             }
@@ -85,7 +85,7 @@ fn main() {
         println!("HALT {:o}", m.r[7]);
         println!("FAULTS {}", m.faults.iter().map(|a| format!("{a:o}")).collect::<Vec<_>>().join(" "));
         let dump = |base: u16| {
-            (0..0o400u16).map(|i| format!("{:o}", m.mem[(base >> 1) as usize + i as usize])).collect::<Vec<_>>().join(" ")
+            (0..0o400u16).map(|i| format!("{:o}", m.bus.mem[(base >> 1) as usize + i as usize])).collect::<Vec<_>>().join(" ")
         };
         println!("MEM 2000 {}", dump(0o2000));
         println!("MEM 3000 {}", dump(0o3000));

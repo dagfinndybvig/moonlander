@@ -2,6 +2,7 @@
 //! its core memory, line clock, host line and keyboard, driving the VT11
 //! display processor model from the `gt40` crate.
 
+pub mod cost;
 pub mod cpu;
 pub mod machine;
 pub mod timing;

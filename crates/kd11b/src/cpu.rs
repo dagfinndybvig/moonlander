@@ -283,7 +283,9 @@ impl Machine {
             0o000001 => return Ok(Executed { outcome: Outcome::Wait, class: Class::Misc }),
             0o000002 => {
                 self.r[PC] = self.pop()?;
-                self.psw = self.pop()?;
+                let at = self.r[SP];
+                let psw = self.pop()?;
+                self.psw = self.unstack_psw(at, psw);
                 return ok(Class::Rti);
             }
             0o000003 => return Ok(Executed { outcome: Outcome::Trap(0o14), class: Class::Trap }),

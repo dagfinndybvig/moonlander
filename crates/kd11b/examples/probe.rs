@@ -16,12 +16,12 @@ fn main() {
     let mut m = Machine::new(words, hz);
     m.load(&img);
     let mut seen: BTreeMap<(u16, [u16; 6]), (u64, f64)> = BTreeMap::new();
-    while m.t < until && !m.halted {
+    while m.bus.t < until && !m.halted {
         let pc = m.r[7];
         if pcs.contains(&pc) {
             let mut r = [0u16; 6];
             r.copy_from_slice(&m.r[..6]);
-            let e = seen.entry((pc, r)).or_insert((0, m.t / 1e6));
+            let e = seen.entry((pc, r)).or_insert((0, m.bus.t / 1e6));
             e.0 += 1;
         }
         m.step();

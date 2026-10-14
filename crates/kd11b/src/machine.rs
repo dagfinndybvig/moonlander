@@ -1,167 +1,91 @@
-//! A GT40: KD11-B processor, MM11 core memory, KW11-L line clock, VT11
-//! display processor, DL11 line to the host and the LK40 keyboard, all on one
-//! Unibus with one time base in microseconds.
+//! A GT40: the KD11-B processor on the GT40's Unibus. Everything other than
+//! the processor (core, VT11, line clock, host line, keyboard) is
+//! `gt40::terminal::Terminal`, shared with the translation.
 
 use crate::cpu::{Class, Outcome};
 use crate::timing::Timing;
-use gt40::vt11::{DisplayBus, Vt11};
-
-/// A bus error: odd address on a word access, or no device at the address.
-/// It becomes a trap to 004.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub struct Fault(pub u16);
-
-/// KW11-L line clock at 177546.
-#[derive(Clone, Debug)]
-pub struct LineClock {
-    pub hz: f64,
-    pub csr: u16,
-    pub next_tick: f64,
-    pub ticks: u64,
-}
-
-impl LineClock {
-    const MONITOR: u16 = 0o200;
-    const IE: u16 = 0o100;
-    fn period(&self) -> f64 {
-        1_000_000.0 / self.hz
-    }
-    fn wants_interrupt(&self) -> bool {
-        self.csr & Self::MONITOR != 0 && self.csr & Self::IE != 0
-    }
-}
-
-/// DL11 asynchronous line to the host computer (175610-175616).
-#[derive(Clone, Debug, Default)]
-pub struct HostLine {
-    pub rcsr: u16,
-    pub xcsr: u16,
-    /// Everything the program has sent to the host.
-    pub sent: Vec<u8>,
-}
-
-/// LK40 keyboard and console registers (177560-177566).
-#[derive(Clone, Debug, Default)]
-pub struct Console {
-    pub tks: u16,
-    pub tkb: u16,
-    pub tps: u16,
-}
+pub use gt40::terminal::Fault;
+use gt40::terminal::{Terminal, PSW_ADDR};
+use std::collections::HashMap;
 
 pub struct Machine {
-    /// Core memory, one entry per word.
-    pub mem: Vec<u16>,
+    /// Core, devices and machine time.
+    pub bus: Terminal,
     pub r: [u16; 8],
     pub psw: u16,
-    /// Machine time, microseconds.
-    pub t: f64,
     pub halted: bool,
     pub waiting: bool,
-    pub vt11: Vt11,
-    pub clock: LineClock,
-    pub host: Option<HostLine>,
-    pub console: Console,
     pub timing: Timing,
     /// Instructions executed.
     pub instructions: u64,
     /// The last instruction word fetched (for diagnostics).
     pub last_insn: u16,
-    /// Memory references made by the instruction in progress.
-    pub(crate) refs: u32,
     /// Addresses of bus errors taken, for diagnostics.
     pub faults: Vec<u16>,
-    /// When set, every bus access is logged here: (write?, address, value).
-    pub access_log: Option<Vec<(bool, u16, u16)>>,
-    /// Console switch register (177570, read) and display register (write).
-    /// The GT40 User's Guide boot procedure loads 166000 through the switches.
-    pub switches: u16,
-    pub console_lights: u16,
-    /// Whether the VT11 answers on the bus (off for CPU-only tests).
-    pub has_vt11: bool,
-}
-
-struct Mem<'a>(&'a [u16]);
-
-impl DisplayBus for Mem<'_> {
-    fn dma_read(&self, addr: u16) -> Option<u16> {
-        self.0.get((addr >> 1) as usize).copied()
-    }
+    /// Block-synchronous mode, for comparing the original binary with the
+    /// translation, which can only be interrupted between basic blocks.
+    /// When set (one flag per word of the address space), devices are
+    /// brought up to time and interrupts taken only at block starts, and a
+    /// stacked PSW is written with its condition codes cleared, since the
+    /// translation keeps none between blocks. RTI restores the real codes
+    /// from `shadow_cc`, so the program runs exactly as it would otherwise.
+    pub block_starts: Option<Vec<bool>>,
+    shadow_cc: HashMap<u16, u16>,
 }
 
 impl Machine {
     /// A GT40 with `words` words of core and a mains supply of `line_hz`.
     pub fn new(words: usize, line_hz: f64) -> Machine {
-        let mut m = Machine {
-            mem: vec![0; words],
+        Machine {
+            bus: Terminal::new(words, line_hz),
             r: [0; 8],
             psw: 0,
-            t: 0.0,
             halted: false,
             waiting: false,
-            vt11: Vt11::new(line_hz),
-            clock: LineClock { hz: line_hz, csr: 0, next_tick: 1_000_000.0 / line_hz, ticks: 0 },
-            host: Some(HostLine { xcsr: 0o200, ..Default::default() }),
-            console: Console { tps: 0o200, ..Default::default() },
             timing: Timing::provisional(),
             instructions: 0,
             last_insn: 0,
-            refs: 0,
             faults: Vec::new(),
-            access_log: None,
-            switches: 0,
-            console_lights: 0,
-            has_vt11: true,
-        };
-        m.unibus_init();
-        m
+            block_starts: None,
+            shadow_cc: HashMap::new(),
+        }
     }
 
     /// Load an absolute loader image and set the PC to its start address.
     pub fn load(&mut self, img: &gt40::lda::Image) {
-        img.load_into(&mut self.mem);
-        if let Some(s) = img.start {
+        if let Some(s) = self.bus.load(img) {
             self.r[7] = s;
         }
     }
 
-    fn unibus_init(&mut self) {
-        self.vt11.reset();
-        self.clock.csr = 0;
-        if let Some(h) = &mut self.host {
-            h.rcsr = 0;
-            h.xcsr = 0o200;
-        }
-        self.console.tks = 0;
-        self.console.tps = 0o200;
+    /// Machine time, microseconds.
+    pub fn t(&self) -> f64 {
+        self.bus.t
     }
 
-    // ---- bus -----------------------------------------------------------------
+    // ---- bus, with the processor status word answered here ------------------
 
     pub fn read_word(&mut self, a: u16) -> Result<u16, Fault> {
-        if a & 1 != 0 {
-            return Err(Fault(a));
+        if a == PSW_ADDR {
+            self.bus.refs += 1;
+            if let Some(log) = &mut self.bus.access_log {
+                log.push((false, a, self.psw));
+            }
+            return Ok(self.psw);
         }
-        self.refs += 1;
-        let v = if (a as usize) < self.mem.len() * 2 { Ok(self.mem[(a >> 1) as usize]) } else { self.io_read(a) };
-        if let (Some(log), Ok(v)) = (&mut self.access_log, &v) {
-            log.push((false, a, *v));
-        }
-        v
+        self.bus.read_word(a)
     }
 
     pub fn write_word(&mut self, a: u16, v: u16) -> Result<(), Fault> {
-        if a & 1 != 0 {
-            return Err(Fault(a));
-        }
-        if let Some(log) = &mut self.access_log {
-            log.push((true, a, v));
-        }
-        self.refs += 1;
-        if (a as usize) < self.mem.len() * 2 {
-            self.mem[(a >> 1) as usize] = v;
+        if a == PSW_ADDR {
+            self.bus.refs += 1;
+            if let Some(log) = &mut self.bus.access_log {
+                log.push((true, a, v));
+            }
+            self.psw = v & 0o357;
             return Ok(());
         }
-        self.io_write(a, v, None)
+        self.bus.write_word(a, v)
     }
 
     pub fn read_byte(&mut self, a: u16) -> Result<u8, Fault> {
@@ -170,146 +94,54 @@ impl Machine {
     }
 
     pub fn write_byte(&mut self, a: u16, v: u8) -> Result<(), Fault> {
-        let wa = a & !1;
-        if let Some(log) = &mut self.access_log {
-            log.push((true, a, v as u16));
-        }
-        self.refs += 1;
-        if (wa as usize) < self.mem.len() * 2 {
-            let w = &mut self.mem[(wa >> 1) as usize];
-            *w = if a & 1 != 0 { (*w & 0x00FF) | ((v as u16) << 8) } else { (*w & 0xFF00) | v as u16 };
+        if a & !1 == PSW_ADDR {
+            self.bus.refs += 1;
+            if let Some(log) = &mut self.bus.access_log {
+                log.push((true, a, v as u16));
+            }
+            if a & 1 == 0 {
+                self.psw = ((self.psw & 0xFF00) | v as u16) & 0o357;
+            }
             return Ok(());
         }
-        self.io_write(wa, 0, Some((a & 1 != 0, v)))
-    }
-
-    fn io_read(&mut self, a: u16) -> Result<u16, Fault> {
-        if !self.has_vt11 && (0o172000..=0o172006).contains(&a) {
-            return Err(Fault(a));
-        }
-        Ok(match a {
-            0o172000 => self.vt11.read_dpc(),
-            0o172002 => self.vt11.read_dsr(),
-            0o172004 => self.vt11.read_xsr(),
-            0o172006 => self.vt11.read_ysr(),
-            0o177546 => self.clock.csr,
-            0o177560 => self.console.tks,
-            0o177562 => {
-                self.console.tks &= !0o200;
-                self.console.tkb
-            }
-            0o177564 => self.console.tps,
-            0o177566 => 0,
-            0o177776 => self.psw,
-            0o177570 => self.switches,
-            0o175610..=0o175616 => match &mut self.host {
-                Some(h) => match a {
-                    0o175610 => h.rcsr,
-                    0o175612 => 0,
-                    0o175614 => h.xcsr,
-                    _ => 0,
-                },
-                None => return Err(Fault(a)),
-            },
-            _ => return Err(Fault(a)),
-        })
-    }
-
-    /// A write to the I/O page. `byte` carries (high byte?, value) for MOVB
-    /// and friends; device registers here are written as words.
-    fn io_write(&mut self, a: u16, v: u16, byte: Option<(bool, u8)>) -> Result<(), Fault> {
-        if !self.has_vt11 && (0o172000..=0o172006).contains(&a) {
-            return Err(Fault(a));
-        }
-        let cur = if byte.is_some() { self.io_read(a)? } else { 0 };
-        let v = match byte {
-            Some((true, b)) => (cur & 0x00FF) | ((b as u16) << 8),
-            Some((false, b)) => (cur & 0xFF00) | b as u16,
-            None => v,
-        };
-        match a {
-            0o172000 => {
-                self.sync_display();
-                self.vt11.write_dpc(v, self.t);
-            }
-            0o172002 => {} // rings the bell
-            0o172004 | 0o172006 => {}
-            0o177546 => {
-                // Bit 6 is the interrupt enable; writing 0 to bit 7 clears
-                // the monitor flag.
-                self.clock.csr = (self.clock.csr & !0o100) | (v & 0o100);
-                if v & 0o200 == 0 {
-                    self.clock.csr &= !0o200;
-                }
-            }
-            0o177560 => self.console.tks = (self.console.tks & 0o200) | (v & 0o100),
-            0o177564 => self.console.tps = (self.console.tps & 0o200) | (v & 0o100),
-            0o177566 => {}
-            0o177776 => self.psw = v & 0o357,
-            0o177570 => self.console_lights = v,
-            0o175610..=0o175616 => match &mut self.host {
-                Some(h) => match a {
-                    0o175610 => h.rcsr = v & 0o100,
-                    0o175614 => h.xcsr = (h.xcsr & 0o200) | (v & 0o100),
-                    0o175616 => h.sent.push(v as u8),
-                    _ => {}
-                },
-                None => return Err(Fault(a)),
-            },
-            _ => return Err(Fault(a)),
-        }
-        Ok(())
-    }
-
-    /// Bring the display processor up to machine time.
-    pub fn sync_display(&mut self) {
-        let mem = Mem(&self.mem);
-        self.vt11.run_until(&mem, self.t);
+        self.bus.write_byte(a, v)
     }
 
     // ---- interrupts and time -------------------------------------------------
 
-    fn advance_clock(&mut self) {
-        while self.clock.next_tick <= self.t {
-            self.clock.next_tick += self.clock.period();
-            self.clock.ticks += 1;
-            self.clock.csr |= LineClock::MONITOR;
+    fn at_block_start(&self) -> bool {
+        match &self.block_starts {
+            None => true,
+            Some(b) => b.get((self.r[7] >> 1) as usize).copied().unwrap_or(false),
         }
-    }
-
-    /// Highest-priority interrupt the processor will accept now.
-    fn pending_interrupt(&self) -> Option<(u16, u16)> {
-        let prio = (self.psw >> 5) & 7;
-        if self.clock.wants_interrupt() && 6 > prio {
-            return Some((6, 0o100));
-        }
-        if 4 > prio {
-            if let Some(v) = self.vt11.interrupt_vector() {
-                return Some((4, v));
-            }
-            if self.console.tks & 0o300 == 0o300 {
-                return Some((4, 0o60));
-            }
-        }
-        None
     }
 
     fn take_interrupt(&mut self, vector: u16) -> Result<(), Fault> {
-        match vector {
-            0o100 => self.clock.csr &= !LineClock::MONITOR,
-            0o320 | 0o324 | 0o330 => self.vt11.acknowledge(vector),
-            _ => {}
-        }
+        self.bus.acknowledge(vector);
         self.trap(vector)
     }
 
-    fn trap(&mut self, vector: u16) -> Result<(), Fault> {
+    pub(crate) fn trap(&mut self, vector: u16) -> Result<(), Fault> {
         let (psw, pc) = (self.psw, self.r[7]);
-        self.push(psw)?;
+        let stacked = if self.block_starts.is_some() {
+            self.shadow_cc.insert(self.r[6].wrapping_sub(2), psw & 0o17);
+            psw & !0o17
+        } else {
+            psw
+        };
+        self.push(stacked)?;
         self.push(pc)?;
         self.r[7] = self.read_word(vector)?;
         self.psw = self.read_word(vector + 2)?;
         Ok(())
+    }
+
+    /// The PSW popped by RTI from `addr`.
+    pub(crate) fn unstack_psw(&mut self, addr: u16, v: u16) -> u16 {
+        match self.shadow_cc.remove(&addr) {
+            Some(cc) if self.block_starts.is_some() => (v & !0o17) | cc,
+            _ => v,
+        }
     }
 
     /// Advance the machine by one step: take an interrupt, execute one
@@ -318,30 +150,24 @@ impl Machine {
         if self.halted {
             return;
         }
-        self.sync_display();
-        self.advance_clock();
-        if let Some((_, vector)) = self.pending_interrupt() {
-            self.waiting = false;
-            self.refs = 0;
-            if self.take_interrupt(vector).is_err() {
-                self.halted = true; // double bus error
+        if self.waiting || self.at_block_start() {
+            self.bus.sync();
+            if let Some((_, vector)) = self.bus.pending_interrupt((self.psw >> 5) & 7) {
+                self.waiting = false;
+                self.bus.refs = 0;
+                if self.take_interrupt(vector).is_err() {
+                    self.halted = true; // double bus error
+                }
+                self.bus.t += self.timing.interrupt();
+                return;
             }
-            self.t += self.timing.interrupt();
-            return;
         }
         if self.waiting {
-            // Sleep until the display raises an interrupt or the clock ticks.
-            let mem = Mem(&self.mem);
-            self.vt11.irq_time = None;
-            self.vt11.run_until(&mem, self.clock.next_tick);
-            self.t = match self.vt11.irq_time.take() {
-                Some(t) if t < self.clock.next_tick => t.max(self.t),
-                _ => self.clock.next_tick,
-            };
+            self.bus.sleep();
             return;
         }
-        self.refs = 0;
-        let start = self.t;
+        self.bus.refs = 0;
+        let start = self.bus.t;
         let result = self.execute();
         self.instructions += 1;
         let (outcome, class) = match result {
@@ -357,7 +183,7 @@ impl Machine {
             Outcome::Halt => self.halted = true,
             Outcome::Wait => self.waiting = true,
             Outcome::Reset => {
-                self.unibus_init();
+                self.bus.unibus_init();
                 extra = self.timing.reset();
             }
             Outcome::Trap(v) => {
@@ -367,14 +193,14 @@ impl Machine {
                 extra = self.timing.interrupt();
             }
         }
-        self.t = start + self.timing.instruction(class, self.refs) + extra;
+        self.bus.t = start + self.timing.instruction(class, self.bus.refs) + extra;
     }
 
     /// Run until machine time reaches `until` or the processor halts.
     pub fn run_until(&mut self, until: f64) {
-        while self.t < until && !self.halted {
+        while self.bus.t < until && !self.halted {
             self.step();
         }
-        self.sync_display();
+        self.bus.sync_display();
     }
 }
