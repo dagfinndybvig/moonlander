@@ -65,6 +65,8 @@ pub struct Snapshot {
     /// Priority bits of the PSW.
     pub priority: u16,
     pub mem_hash: u64,
+    /// The display processor: (DPC, X, Y, its clock).
+    pub display: (u16, u16, u16, f64),
 }
 
 pub struct Moonlander {
@@ -260,6 +262,7 @@ impl Moonlander {
                 r: [self.in1, self.in2, self.ret1, self.ret2, self.temp, self.temp2, self.sp],
                 priority: (self.psw >> 5) & 7,
                 mem_hash: self.bus.mem_hash,
+                display: self.bus.vt11.whereabouts(),
             };
             if !o(&s) {
                 return Err(Escape::Stop);

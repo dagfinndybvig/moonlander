@@ -5,15 +5,18 @@
 //! block starts, as the translation does.
 mod common;
 use common::*;
-use gt40::vt11::LightPen;
 use kd11b::Machine;
 use moonlander::generated::blocks::ALL;
+use moonlander::generated::symbols::*;
+use moonlander::pilot::{Pilot, Plan};
 use moonlander::{Escape, Moonlander, Snapshot};
 use std::sync::{Arc, Mutex};
 
 struct Run {
     blocks: u64,
     end: Escape,
+    /// Messages and pictures put up (SYSMES and FSUBC values), in order.
+    messages: Vec<u16>,
     /// How many times each block ran.
     visits: std::collections::BTreeMap<u16, u64>,
     host: Vec<u8>,
@@ -45,14 +48,42 @@ fn to_next_block(m: &mut Machine, starts: &[bool]) -> Result<(), String> {
     }
 }
 
-fn lockstep(seconds: f64, pen: Vec<(f64, Option<LightPen>)>) -> Result<Run, String> {
+/// Run both sides for `seconds` of machine time. With a plan, the autopilot
+/// flies the translation, and every pen movement it makes is given to the
+/// original too, for the same moment.
+fn lockstep(seconds: f64, plan: Option<Plan>) -> Result<Run, String> {
     let starts = block_starts();
     let emu = Arc::new(Mutex::new(emulator()));
-    emu.lock().unwrap().bus.pen_script = pen.clone().into();
     let failure: Arc<Mutex<Option<String>>> = Arc::new(Mutex::new(None));
     let mut tr = Moonlander::new(60.0);
-    tr.bus.pen_script = pen.into();
     tr.limit = seconds * 1e6;
+    let messages = Arc::new(Mutex::new(Vec::<u16>::new()));
+    {
+        let mut pilot = plan.map(Pilot::new);
+        let (e3, m3) = (emu.clone(), messages.clone());
+        tr.pacer = Some(Box::new(move |bus| {
+            // Nothing here looks at the picture; don't keep it.
+            bus.vt11.out.clear();
+            if let Some(pilot) = &mut pilot {
+                let before = pilot.script.len();
+                pilot.fly(bus);
+                if pilot.script.len() > before {
+                    let mut m = e3.lock().unwrap();
+                    for &(at, pen) in &pilot.script[before..] {
+                        m.bus.move_pen(at, pen);
+                    }
+                }
+            }
+            let mut seen = m3.lock().unwrap();
+            for a in [SYSMES, FSUBC] {
+                let v = bus.mem[(a >> 1) as usize];
+                if v != 0 && seen.last() != Some(&v) && !seen.contains(&v) {
+                    seen.push(v);
+                }
+            }
+            true
+        }));
+    }
     let (e2, f2) = (emu.clone(), failure.clone());
     let mut last: Option<Snapshot> = None;
     let visits = Arc::new(Mutex::new(std::collections::BTreeMap::new()));
@@ -70,17 +101,19 @@ fn lockstep(seconds: f64, pen: Vec<(f64, Option<LightPen>)>) -> Result<Run, Stri
             r: [m.r[0], m.r[1], m.r[2], m.r[3], m.r[4], m.r[5], m.r[6]],
             priority: (m.psw >> 5) & 7,
             mem_hash: m.bus.mem_hash,
+            display: m.bus.vt11.whereabouts(),
         };
         if o != *s {
             let prev = last.map(|p| name(p.addr)).unwrap_or_default();
             *f2.lock().unwrap() = Some(format!(
-                "after {prev}:\n  original    {} t={} r=[{}] pri={} hash={:016x}\n  translation {} t={} r=[{}] pri={} hash={:016x}",
-                name(o.addr), o.t, oct(&o.r), o.priority, o.mem_hash,
-                name(s.addr), s.t, oct(&s.r), s.priority, s.mem_hash
+                "after {prev}:\n  original    {} t={} r=[{}] pri={} hash={:016x} display={:?}\n  translation {} t={} r=[{}] pri={} hash={:016x} display={:?}",
+                name(o.addr), o.t, oct(&o.r), o.priority, o.mem_hash, o.display,
+                name(s.addr), s.t, oct(&s.r), s.priority, s.mem_hash, s.display
             ));
             return false;
         }
         last = Some(*s);
+        m.bus.vt11.out.clear();
         m.step(); // execute the block's first instruction
         true
     }));
@@ -96,7 +129,8 @@ fn lockstep(seconds: f64, pen: Vec<(f64, Option<LightPen>)>) -> Result<Run, Stri
     }
     let visits = visits.lock().unwrap().clone();
     let host = tr.bus.host.as_ref().map(|h| h.sent.clone()).unwrap_or_default();
-    Ok(Run { blocks: tr.blocks, end, visits, host })
+    let messages = messages.lock().unwrap().clone();
+    Ok(Run { blocks: tr.blocks, end, visits, host, messages })
 }
 
 #[test]
@@ -104,7 +138,7 @@ fn greeting_flight_and_crash_with_no_hands() {
     // No light pen: the greeting for 30 s, then the ship falls at the
     // starting 75% throttle until it hits the moon, explodes, and the game
     // starts again.
-    match lockstep(120.0, vec![]) {
+    match lockstep(120.0, None) {
         Ok(r) => {
             assert_eq!(r.end, Escape::Stop);
             // It logged the user off the host before anything else.
@@ -117,4 +151,60 @@ fn greeting_flight_and_crash_with_no_hands() {
         }
         Err(e) => panic!("{e}"),
     }
+}
+
+/// Every block either side reached, across all the flights.
+static COVERED: Mutex<Vec<u16>> = Mutex::new(Vec::new());
+
+fn fly(plan: Plan, seconds: f64, expect: &[u16]) {
+    let r = lockstep(seconds, Some(plan)).unwrap_or_else(|e| panic!("{plan:?}: {e}"));
+    assert_eq!(r.end, Escape::Stop);
+    for m in expect {
+        assert!(r.messages.contains(m), "{plan:?}: expected message {m:06o}, saw [{}]", oct(&r.messages));
+    }
+    let mut c = COVERED.lock().unwrap();
+    c.extend(r.visits.keys());
+    c.sort();
+    c.dedup();
+    eprintln!("{plan:?}: {} blocks in step; {} of {} blocks reached so far", r.blocks, c.len(), ALL.len());
+}
+
+#[test]
+fn perfect_landing_by_the_mcdonalds() {
+    // The man walks over, orders, walks back, and the ship takes off.
+    fly(Plan::McDonalds, 280.0, &[GREATM, ORDER]);
+}
+
+#[test]
+fn landing_and_planting_a_flag() {
+    fly(Plan::Flag, 270.0, &[GREATM, MANMSG, FLAGL]);
+}
+
+#[test]
+fn landings_too_hard() {
+    fly(Plan::Hard { fps: 20 }, 240.0, &[ROUGHM]);
+    fly(Plan::Hard { fps: 40 }, 240.0, &[CRIPM]);
+}
+
+#[test]
+fn tipping_over() {
+    fly(Plan::Tilted { degrees: 25 }, 240.0, &[SIDEM]);
+    fly(Plan::Bumpy, 270.0, &[BUMPYM]);
+}
+
+#[test]
+fn crashing_into_the_mcdonalds() {
+    fly(Plan::IntoMcDonalds, 240.0, &[MACDED]);
+}
+
+#[test]
+fn leaving_the_screen() {
+    fly(Plan::Climb, 280.0, &[TOPMSG]);
+    fly(Plan::Drift { fps: -150 }, 260.0, &[LFTMSG]);
+    fly(Plan::Drift { fps: 150 }, 200.0, &[RGTMSG]);
+}
+
+#[test]
+fn choosing_a_readout_with_the_light_pen() {
+    fly(Plan::Readout { item: 4, slot: 1 }, 220.0, &[]);
 }

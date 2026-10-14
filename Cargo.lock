@@ -85,6 +85,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "moonlander"
+version = "0.1.0"
+dependencies = [
+ "gt40",
+ "kd11b",
+]
+
+[[package]]
 name = "png"
 version = "0.17.16"
 source = "registry+https://github.com/rust-lang/crates.io-index"

@@ -44,6 +44,7 @@
 
 pub mod generated;
 pub mod machine;
+pub mod pilot;
 mod program;
 
 pub use machine::{Block, Escape, Flow, Moonlander, Snapshot};

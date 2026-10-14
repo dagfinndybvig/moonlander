@@ -16,6 +16,7 @@
 //!
 //! Modelling decisions are marked MODEL in the comments.
 
+use std::collections::VecDeque;
 use crate::chargen;
 
 /// Visible face of the GT40's VR14: 1024 x 768 raster units, origin bottom left.
@@ -153,6 +154,11 @@ pub struct Vt11 {
     pub irq_time: Option<f64>,
     // Light pen.
     pub pen: Option<LightPen>,
+    /// Pen movements to come, in time order: at each DPU time the pen goes
+    /// to the given place, or away. The pen is looked up by the time of each
+    /// point the beam draws, so a movement takes effect at its moment however
+    /// the display's running is divided up.
+    pub pen_moves: VecDeque<(f64, Option<LightPen>)>,
     lp_inhibit_until: f64,
     // DPU clock and the next line-frequency pulse, microseconds.
     t: f64,
@@ -191,6 +197,7 @@ impl Vt11 {
             timeout_irq: false,
             irq_time: None,
             pen: None,
+            pen_moves: VecDeque::new(),
             lp_inhibit_until: 0.0,
             t: 0.0,
             next_line_pulse: 1_000_000.0 / line_hz,
@@ -224,6 +231,12 @@ impl Vt11 {
     /// DPU clock, microseconds.
     pub fn time(&self) -> f64 {
         self.t
+    }
+
+    /// Where the display processor is: (DPC, X, Y, its clock). Two models
+    /// given the same display file and the same light pen agree on this.
+    pub fn whereabouts(&self) -> (u16, u16, u16, f64) {
+        (self.dpc, self.x, self.y, self.t)
     }
 
     pub fn is_running(&self) -> bool {
@@ -315,6 +328,7 @@ impl Vt11 {
 
     /// Run the display processor until its clock reaches `until` or it stops.
     pub fn run_until<B: DisplayBus + ?Sized>(&mut self, bus: &B, until: f64) {
+        self.settle_pen();
         loop {
             while self.next_line_pulse <= self.t {
                 self.next_line_pulse += self.line_period;
@@ -746,11 +760,34 @@ impl Vt11 {
 
     // ---- light pen -----------------------------------------------------------
 
+    /// Where the pen is at DPU time `t`.
+    fn pen_at(&self, t: f64) -> Option<LightPen> {
+        let mut p = self.pen;
+        for &(at, q) in &self.pen_moves {
+            if at > t {
+                break;
+            }
+            p = q;
+        }
+        p
+    }
+
+    /// Apply the pen movements whose time has passed.
+    fn settle_pen(&mut self) {
+        while let Some(&(at, q)) = self.pen_moves.front() {
+            if at > self.t {
+                break;
+            }
+            self.pen = q;
+            self.pen_moves.pop_front();
+        }
+    }
+
     fn pen_sees(&self, x: f32, y: f32, t: f64) -> bool {
         if !self.lp_enable || t < self.lp_inhibit_until {
             return false;
         }
-        match self.pen {
+        match self.pen_at(t) {
             Some(p) => {
                 let (ddx, ddy) = (x - p.x, y - p.y);
                 ddx * ddx + ddy * ddy <= p.radius * p.radius

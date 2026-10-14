@@ -8,7 +8,6 @@
 //! requests and display timing, because both use this code.
 
 use crate::vt11::{DisplayBus, LightPen, Vt11};
-use std::collections::VecDeque;
 
 /// A bus error: odd address on a word access, or no device at the address.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -79,10 +78,6 @@ pub struct Terminal {
     /// Times at which the bell was rung (any write to the display status
     /// register rings it).
     pub bells: Vec<f64>,
-    /// Scheduled light pen movements: at each time, the pen goes to the
-    /// given place (or away from the screen). Applied in time order as the
-    /// display runs, so two runs given the same script see the same pen.
-    pub pen_script: VecDeque<(f64, Option<LightPen>)>,
     /// Order-independent hash of all of core, kept up to date on every
     /// write. Two machines with equal hashes almost surely hold equal core.
     pub mem_hash: u64,
@@ -120,7 +115,6 @@ impl Terminal {
             refs: 0,
             access_log: None,
             bells: Vec::new(),
-            pen_script: VecDeque::new(),
             mem_hash: 0,
         };
         t.unibus_init();
@@ -289,18 +283,14 @@ impl Terminal {
 
     // ---- display and time ----------------------------------------------------
 
-    /// Run the display processor to `until`, moving the light pen as
-    /// scripted on the way.
+    /// Run the display processor to `until`.
     fn run_display(&mut self, until: f64) {
-        while let Some(&(at, pen)) = self.pen_script.front() {
-            if at > until {
-                break;
-            }
-            self.vt11.run_until(&Core(&self.mem), at);
-            self.vt11.pen = pen;
-            self.pen_script.pop_front();
-        }
         self.vt11.run_until(&Core(&self.mem), until);
+    }
+
+    /// Schedule a light pen movement (the display applies it at its time).
+    pub fn move_pen(&mut self, at: f64, pen: Option<LightPen>) {
+        self.vt11.pen_moves.push_back((at, pen));
     }
 
     /// Bring the display processor up to machine time.
