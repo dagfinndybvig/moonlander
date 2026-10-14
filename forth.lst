@@ -1,0 +1,684 @@
+001000  LASTHD = 0              ; link of the first dictionary header
+001000  DICT0 = 0o4000          ; kernel dictionary (headers + code)
+001000  DP0 = 0o10000           ; runtime dictionary, well above the kernel code
+001000  DLIST = 0o30000
+001000  CURX = DLIST+0o1702     ; cursor point x word (DLIST+962)
+001000  CURY = DLIST+0o1704
+001000  TIB = 0o32000
+001000  WORDBUF = 0o32100
+001000  X0 = 288.               ; left edge of the 32-char field
+001000  Y0 = 740.               ; baseline of row 0
+001000  RP0 = 0o33000
+001000  SP0 = 0o34000
+001000          .ORG 0o1000
+001000  START:  MOV #SP0, SP
+001004          MOV #RP0, R5
+001010          MOV #DP0, @#DPPTR
+001016          CLR @#STATE
+001022          JSR PC, CLRSCR
+001026          MOV #DLIST, @#0o172000      ; DPC: load and run the list
+001034          MOV #BANNER, R1
+001040  BAN:    MOVB (R1)+, R0
+001042          BIC #0o177400, R0
+001046          BEQ BAND
+001050          JSR PC, EMIT
+001054          BR BAN
+001056  BAND:   JSR PC, DOCR
+001062          JSR PC, DOCR
+001066          JMP QUIT
+001072  BANNER: .ASCII "GT40 FORTH"
+001104          .BYTE 0
+001106  QUIT:   MOV #RP0, R5
+001112          CLR @#STATE
+001116          CLR @#INPTR
+001122          MOV #TIB, R1
+001126  QRD:    JSR PC, KEY
+001132          CMP R0, #0o15
+001136          BEQ QRDD
+001140          CMP R0, #0o177
+001144          BEQ QRBS
+001146          CMP R1, #TIB+64.
+001152          BGE QRD         ; line full: drop the character
+001154          MOV R0, -(SP)               ; the char survives the echo
+001156          JSR PC, EMIT
+001162          MOV (SP)+, R0
+001164          MOVB R0, (R1)+
+001166          BR QRD
+001170  QRBS:   CMP R1, #TIB
+001174          BLS QRD         ; empty line, nothing to erase
+001176          TST @#CURCOL
+001202          BEQ QRD         ; column 0: no character to erase on this row
+001204          DEC @#CURCOL
+001210          DEC R1
+001212          MOV #0o40, R0
+001216          JSR PC, PUTCH
+001222          JSR PC, SETCUR
+001226          BR QRD
+001230  QRDD:   CLRB (R1)
+001232          JSR PC, DOCR
+001236          CLR @#INPTR
+001242  QINT:   JSR PC, WORD
+001246          MOVB @#WORDBUF, R0
+001252          BIC #0o177400, R0
+001256          BEQ QUIT        ; end of line
+001260          JSR PC, INTERP
+001264          BR QINT
+001266  QERR:   TST @#STATE
+001272          BEQ QERR1
+001274          MOV @#OLDDP, @#DPPTR        ; aborting a definition: discard it
+001302          MOV @#OLDDIC, @#LATEST
+001310  QERR1:  MOV #0o77, R0   ; '?'
+001314          JSR PC, EMIT
+001320          JSR PC, DOCR
+001324          MOV #SP0, SP
+001330          MOV #RP0, R5
+001334          CLR @#STATE
+001340          JMP QUIT
+001344  INTERP: MOV (SP)+, @#INTRET         ; save return, leave the data stack clean
+001350          JSR PC, FIND
+001354          TST R0
+001356          BEQ INUM
+001360          BIT #0o200, R1              ; immediate?
+001364          BNE IEXEC
+001366          TST @#STATE
+001372          BEQ IEXEC
+001374          MOV R0, -(SP)               ; compile the cfa
+001376          JSR PC, CC
+001402          JMP @INTRET
+001406  IEXEC:  MOV R0, @#SCRATCH           ; trampoline: run one word, come back
+001412          MOV #IRET, @#SCRATCH+2
+001420          MOV #SCRATCH, R4
+001424          JMP NEXT
+001430  INUM:   JSR PC, NUMB
+001434          TST R0
+001436          BEQ IQERR
+001440          TST @#STATE
+001444          BEQ INUM1
+001446          MOV R1, -(SP)               ; value first, then LIT: CC takes 2(SP)
+001450          MOV #LITCFA, -(SP)
+001454          JSR PC, CC
+001460          JSR PC, CC
+001464          JMP @INTRET
+001470  INUM1:  MOV R1, -(SP)               ; push the value
+001472          JMP @INTRET
+001476  IQERR:  JSR PC, QERR
+001502  IRET:   .WORD IRET1
+001504  IRET1:  JMP @INTRET
+001510  INTRET: .WORD 0
+001512  NEXT:   MOV (R4)+, R3
+001514          JMP @(R3)+
+001516  DOCOL:  MOV R4, -(R5)               ; colon code: push IP, enter the thread
+001520          MOV R3, R4                  ; R3 already points at the first body cell
+001522          JMP NEXT
+001526  DOCON:  MOV (R3), -(SP)             ; constant: push the parameter
+001530          JMP NEXT
+001534  DOVAR:  MOV R3, -(SP)               ; variable: push the parameter address
+001536          JMP NEXT
+001542  EXIT:   MOV (R5)+, R4
+001544          JMP NEXT
+001550  LITCFA:  .WORD LIT
+001552  BRCFA:   .WORD BRC
+001554  QBRCFA:  .WORD QBRC
+001556  DOCFA:   .WORD DOF
+001560  LOOPCFA: .WORD LOOPR
+001562  EXITCFA: .WORD EXIT
+001564  LIT:    MOV (R4)+, -(SP)
+001566          JMP NEXT
+001572  BRC:    ADD (R4)+, R4               ; branch: IP += offset
+001574          JMP NEXT
+001600  QBRC:   TST (SP)+                   ; 0branch: pop, branch if zero
+001602          BNE QBRC1
+001604          ADD (R4)+, R4
+001606          JMP NEXT
+001612  QBRC1:  ADD #2, R4               ; skip the offset cell (IP is word-addressed)
+001616          JMP NEXT
+001622  DOF:    MOV (SP)+, R0               ; ( limit index -- )
+001624          MOV (SP)+, R1
+001626          MOV R1, -(R5)               ; limit first, then index
+001630          MOV R0, -(R5)               ; index on top of the return stack
+001632          JMP NEXT
+001636  LOOPR:  INC (R5)
+001640          CMP (R5), 2(R5)
+001644          BNE LOOPR1
+001646          ADD #4, R5
+001652          ADD #2, R4               ; skip the offset cell (IP is word-addressed)
+001656          JMP NEXT
+001662  LOOPR1: ADD (R4)+, R4
+001664          JMP NEXT
+001670  KEY:    TSTB @#177560
+001674          BPL KEY
+001676          MOVB @#177562, R0
+001702          BIC #0o177400, R0
+001706          RTS PC
+001710  PUTCH:  MOV R1, -(SP)
+001712          MOV @#CURROW, R1
+001716          MOV R1, R2
+001720          ASL R1
+001722          ASL R1                      ; 4r
+001724          ADD R2, R1                  ; 5r
+001726          ASL R1
+001730          ASL R1
+001732          ASL R1                      ; 40r
+001734          ADD #DLIST+8, R1
+001740          ADD @#CURCOL, R1
+001744          MOVB R0, (R1)
+001746          MOV (SP)+, R1
+001750          RTS PC
+001752  EMIT:   CMP R0, #0o15
+001756          BEQ DOCR
+001760          JSR PC, PUTCH
+001764          INC @#CURCOL
+001770          CMP @#CURCOL, #32.
+001776          BLT EMIT1
+002000          JSR PC, DOCR                ; wrap: next line
+002004          RTS PC
+002006  EMIT1:  JSR PC, SETCUR
+002012          RTS PC
+002014  DOCR:   CLR @#CURCOL
+002020          INC @#CURROW
+002024          CMP @#CURROW, #24.
+002032          BLT DOCR1
+002034          DEC @#CURROW
+002040          JSR PC, SCROLL
+002044  DOCR1:  JSR PC, SETCUR
+002050          RTS PC
+002052  SETCUR: MOV R1, -(SP)
+002054          MOV @#CURCOL, R1
+002060          MOV R1, R2
+002062          ASL R2                      ; 2c
+002064          ASL R1
+002066          ASL R1
+002070          ASL R1
+002072          ASL R1                      ; 16c
+002074          SUB R2, R1                  ; 14c
+002076          ADD #X0, R1
+002102          BIS #0o40000, R1
+002106          MOV R1, @#CURX
+002112          MOV @#CURROW, R1
+002116          MOV R1, R2
+002120          ASL R1
+002122          ASL R1
+002124          ASL R1
+002126          ASL R1                      ; 16r
+002130          MOV R2, R3
+002132          ASL R2
+002134          ASL R2
+002136          ASL R2                      ; 8r
+002140          ADD R2, R1                  ; 24r
+002142          NEG R1
+002144          ADD #Y0, R1
+002150          MOV R1, @#CURY
+002154          MOV (SP)+, R1
+002156          RTS PC
+002160  SCROLL: MOV R1, -(SP)
+002162          CLR R2
+002164  SCRL1:  MOV R2, R0
+002166          ASL R0
+002170          ASL R0
+002172          ASL R0                      ; 8r
+002174          MOV R0, R3
+002176          ASL R0
+002200          ASL R0                      ; 32r
+002202          ADD R3, R0                  ; 40r
+002204          ADD #DLIST+8+40., R0        ; source: row r+1
+002210          MOV R0, R1
+002212          SUB #40., R1                ; destination: row r
+002216          MOV #16., R3
+002222  SCRL2:  MOV (R0)+, (R1)+
+002224          DEC R3
+002226          BNE SCRL2
+002230          INC R2
+002232          CMP R2, #23.
+002236          BLT SCRL1
+002240          MOV #DLIST+8+920., R0       ; clear row 23
+002244          MOV #16., R3
+002250  SCRL3:  CLR (R0)+
+002252          DEC R3
+002254          BNE SCRL3
+002256          MOV (SP)+, R1
+002260          RTS PC
+002262  CLRSCR: MOV #DLIST, R0
+002266          MOV #24., R1
+002272          MOV #Y0, R2
+002276  CLRS1:  MOV #0o114000, (R0)+        ; point mode
+002302          MOV #X0, (R0)+              ; position, no intensify
+002306          MOV R2, (R0)+
+002310          MOV #0o100000, (R0)+        ; character mode
+002314          MOV #16., R3
+002320  CLRS2:  CLR (R0)+
+002322          DEC R3
+002324          BNE CLRS2
+002326          SUB #24., R2
+002332          DEC R1
+002334          BNE CLRS1
+002336          MOV #0o114000, (R0)+        ; the cursor point
+002342          MOV #X0+0o40000, (R0)+
+002346          MOV #Y0, (R0)+
+002352          MOV #0o160000, (R0)+        ; JMP
+002356          MOV #DLIST, (R0)+
+002362          CLR @#CURROW
+002366          CLR @#CURCOL
+002372          RTS PC
+002374  DOT:    TST R0
+002376          BPL DOT1
+002400          MOV R0, -(SP)
+002402          MOV #0o55, R0               ; '-'
+002406          JSR PC, EMIT
+002412          MOV (SP)+, R0
+002414          NEG R0
+002416  DOT1:   MOV #PTAB, R1
+002422          CLR @#ZFLG
+002426  DOT2:   CLR R2
+002430  DOT3:   CMP R0, (R1)
+002432          BCS DOT4               ; unsigned: -32768 (NEG overflow) still divides
+002434          SUB (R1), R0
+002436          INC R2
+002440          BR DOT3
+002442  DOT4:   TST R2
+002444          BNE DOT5
+002446          TST @#ZFLG
+002452          BEQ DOT6                    ; suppress leading zeros only
+002454  DOT5:   INC @#ZFLG
+002460          MOV R0, -(SP)               ; remainder survives the EMIT
+002462          ADD #0o60, R2
+002466          MOV R2, R0
+002470          JSR PC, EMIT
+002474          MOV (SP)+, R0
+002476  DOT6:   ADD #2, R1
+002502          CMP R1, #PTAB+10.
+002506          BLT DOT2
+002510          TST @#ZFLG
+002514          BNE DOT7
+002516          MOV #0o60, R0               ; lone zero
+002522          JSR PC, EMIT
+002526  DOT7:   MOV #0o40, R0               ; trailing space
+002532          JSR PC, EMIT
+002536          RTS PC
+002540  PTAB:   .WORD 10000., 1000., 100., 10., 1
+002552  WORD:   MOV @#INPTR, R1
+002556          ADD #TIB, R1
+002562  WRDSK:  MOVB (R1), R2
+002564          BIC #0o177400, R2
+002570          CMP R2, #0o40
+002574          BNE WRDCH
+002576          INC R1
+002600          BR WRDSK
+002602  WRDCH:  TST R2
+002604          BEQ WRDEOS
+002606          MOV #WORDBUF+1, R0
+002612          CLR R3
+002614  WRDCP:  CMP R3, #17.
+002620          BGE WRDDN       ; name cap: 17 chars fit before the kernel cells
+002622          CMP R2, #0o141              ; 'a'
+002626          BLT WRDST
+002630          CMP R2, #0o172              ; 'z'
+002634          BGT WRDST
+002636          BIC #0o40, R2
+002642  WRDST:  MOVB R2, (R0)+
+002644          INC R3
+002646          INC R1
+002650          MOVB (R1), R2
+002652          BIC #0o177400, R2
+002656          BEQ WRDDN
+002660          CMP R2, #0o40
+002664          BNE WRDCP
+002666  WRDDN:  SUB #TIB, R1
+002672          MOV R1, @#INPTR
+002676          MOVB R3, @#WORDBUF
+002702          RTS PC
+002704  WRDEOS: SUB #TIB, R1
+002710          MOV R1, @#INPTR
+002714          CLRB @#WORDBUF
+002720          RTS PC
+002722  FIND:   MOV @#LATEST, R2
+002726  FND1:   TST R2
+002730          BEQ FNDNO
+002732          MOVB 2(R2), R0
+002736          BIC #0o177400, R0
+002742          MOVB @#WORDBUF, R1
+002746          BIC #0o177400, R1
+002752          CMP R0, R1
+002754          BNE FNDNEXT
+002756          MOV R2, R3
+002760          ADD #4, R3                  ; header characters
+002764          MOV #WORDBUF+1, R1
+002770  FNDC:   CMPB (R3)+, (R1)+
+002772          BNE FNDNEXT
+002774          DEC R0
+002776          BNE FNDC
+003000          MOV R2, R0                  ; match: cfa = head + 4 + len rounded up
+003002          ADD #4, R0
+003006          MOVB 2(R2), R1
+003012          BIC #0o177400, R1
+003016          INC R1
+003020          BIC #1, R1
+003024          ADD R1, R0
+003026          MOVB 3(R2), R1              ; flags
+003032          BIC #0o177400, R1
+003036          RTS PC
+003040  FNDNEXT: MOV (R2), R2
+003042          BR FND1
+003044  FNDNO:  CLR R0
+003046          RTS PC
+003050  NUMB:   CLR @#NFLG
+003054          MOVB @#WORDBUF, R2
+003060          BIC #0o177400, R2
+003064          BEQ NUMNO
+003066          MOV #WORDBUF+1, R3
+003072          CLR R1
+003074          MOVB (R3), R0
+003076          BIC #0o177400, R0
+003102          CMP R0, #0o55               ; '-'
+003106          BNE NUML
+003110          INC @#NFLG
+003114          DEC R2
+003116          BEQ NUMNO
+003120          INC R3
+003122  NUML:   MOVB (R3)+, R0
+003124          BIC #0o177400, R0
+003130          SUB #0o60, R0
+003134          BMI NUMNO
+003136          CMP R0, #9.
+003142          BGT NUMNO
+003144          MOV R1, -(SP)               ; acc = acc*10 + digit
+003146          ASL (SP)
+003150          ASL R1
+003152          ASL R1
+003154          ASL R1
+003156          ADD (SP)+, R1
+003160          ADD R0, R1
+003162          DEC R2
+003164          BNE NUML
+003166          TST @#NFLG
+003172          BEQ NUMOK
+003174          NEG R1
+003176  NUMOK:  MOV #1, R0
+003202          RTS PC
+003204  NUMNO:  CLR R0
+003206          RTS PC
+003210  CC:     MOV 2(SP), R0               ; the cell to compile
+003214          MOV (SP)+, R1               ; return address -> R1
+003216          MOV R1, (SP)                ; store it over the cell; RTS consumes it
+003220          MOV @#DPPTR, R1
+003224          MOV R0, (R1)
+003226          ADD #2, @#DPPTR
+003234          RTS PC
+003236  CREATEHDR:
+003236          MOV 2(SP), R0               ; the cfa
+003242          MOV (SP)+, R1               ; return address -> R1
+003244          MOV R1, (SP)                ; store it over the cfa; RTS consumes it
+003246          MOV @#DPPTR, R1
+003252          MOV R1, @#SCRATCH+4         ; header address
+003256          MOV @#LATEST, (R1)+         ; link
+003262          MOVB @#WORDBUF, (R1)+       ; length
+003266          CLRB (R1)+                  ; flags
+003270          MOVB @#WORDBUF, R2
+003274          BIC #0o177400, R2
+003300          MOV #WORDBUF+1, R3
+003304  CHD1:   MOVB (R3)+, (R1)+
+003306          DEC R2
+003310          BNE CHD1
+003312          BIT #1, R1
+003316          BEQ CHD2
+003320          CLRB (R1)+                  ; pad to even
+003322  CHD2:   MOV R0, (R1)+               ; cfa
+003324          MOV R1, @#DPPTR
+003330          MOV @#SCRATCH+4, @#LATEST
+003336          RTS PC
+003340          .ORG 0o32120
+032120  SCRATCH: .BLKW 3                    ; trampoline (2 cells) + header temp
+032126  NFLG:    .BLKW 1
+032130  ZFLG:    .BLKW 1
+032132  DPPTR:   .BLKW 1
+032134  LATEST:  .WORD LASTHD               ; patched by the assembler to the last header
+032136  OLDDP:   .BLKW 1                    ; DP and LATEST as ':' found them, for QERR
+032140  OLDDIC:  .BLKW 1
+032142  STATE:   .BLKW 1
+032144  INPTR:   .BLKW 1
+032146  CURROW:  .BLKW 1
+032150  CURCOL:  .BLKW 1
+032152          .ORG DICT0
+004000          .HEAD "DUP", DUPC
+004012  DUPC:   MOV (SP), -(SP)
+004014          JMP NEXT
+004020          .HEAD "DROP", DROPC
+004032  DROPC:  TST (SP)+
+004034          JMP NEXT
+004040          .HEAD "SWAP", SWAPC
+004052  SWAPC:  MOV (SP)+, R0
+004054          MOV (SP)+, R1
+004056          MOV R0, -(SP)
+004060          MOV R1, -(SP)
+004062          JMP NEXT
+004066          .HEAD "OVER", OVERC
+004100  OVERC:  MOV 2(SP), -(SP)
+004104          JMP NEXT
+004110          .HEAD "ROT", ROTC
+004122  ROTC:   MOV (SP)+, R0
+004124          MOV (SP)+, R1
+004126          MOV (SP)+, R2
+004130          MOV R1, -(SP)
+004132          MOV R0, -(SP)
+004134          MOV R2, -(SP)
+004136          JMP NEXT
+004142          .HEAD "+", PLUSC
+004152  PLUSC:  MOV (SP)+, R0
+004154          ADD R0, (SP)
+004156          JMP NEXT
+004162          .HEAD "-", MINUSC
+004172  MINUSC: MOV (SP)+, R0
+004174          NEG R0
+004176          ADD R0, (SP)
+004200          JMP NEXT
+004204          .HEAD "*", MULC
+004214  MULC:   MOV (SP)+, R2
+004216          MOV (SP)+, R1
+004220          CLR R0
+004222          MOV #16., R3
+004226  MUL1:   CLC
+004230          ROL R0
+004232          ROL R2
+004234          BCC MUL2
+004236          ADD R1, R0
+004240  MUL2:   DEC R3
+004242          BNE MUL1
+004244          MOV R0, -(SP)
+004246          JMP NEXT
+004252          .HEAD "AND", ANDC
+004264  ANDC:   MOV (SP)+, R0
+004266          COM R0
+004270          BIC R0, (SP)
+004272          JMP NEXT
+004276          .HEAD "OR", ORC
+004306  ORC:    MOV (SP)+, R0
+004310          BIS R0, (SP)
+004312          JMP NEXT
+004316          .HEAD "@", FETCHC
+004326  FETCHC: MOV (SP), R0
+004330          MOV (R0), (SP)
+004332          JMP NEXT
+004336          .HEAD "!", STOREC
+004346  STOREC: MOV (SP)+, R0
+004350          MOV (SP)+, (R0)
+004352          JMP NEXT
+004356          .HEAD "C@", CFETCHC
+004366  CFETCHC: MOV (SP), R0
+004370          MOVB (R0), (SP)
+004372          BIC #0o177400, (SP)
+004376          JMP NEXT
+004402          .HEAD "C!", CSTOREC
+004412  CSTOREC: MOV (SP)+, R0
+004414          MOV (SP)+, R1
+004416          MOVB R1, (R0)
+004420          JMP NEXT
+004424          .HEAD ">R", TORC
+004434  TORC:   MOV (SP)+, -(R5)
+004436          JMP NEXT
+004442          .HEAD "R>", RFROMC
+004452  RFROMC: MOV (R5)+, -(SP)
+004454          JMP NEXT
+004460          .HEAD "I", IC
+004470  IC:     MOV (R5), -(SP)
+004472          JMP NEXT
+004476          .HEAD "0=", ZEQC
+004506  ZEQC:   TST (SP)
+004510          BEQ ZEQ1
+004512          CLR (SP)
+004514          JMP NEXT
+004520  ZEQ1:   INC (SP)
+004522          JMP NEXT
+004526          .HEAD "1+", INCC
+004536  INCC:   INC (SP)
+004540          JMP NEXT
+004544          .HEAD "1-", DECC
+004554  DECC:   DEC (SP)
+004556          JMP NEXT
+004562          .HEAD "+!", PSTOREC
+004572  PSTOREC: MOV (SP)+, R0
+004574          MOV (SP)+, R1
+004576          ADD R1, (R0)
+004600          JMP NEXT
+004604          .HEAD "HERE", HEREC
+004616  HEREC:  MOV @#DPPTR, -(SP)
+004622          JMP NEXT
+004626          .HEAD "ALLOT", ALLOTC
+004642  ALLOTC: ADD (SP)+, @#DPPTR
+004646          JMP NEXT
+004652          .HEAD ",", COMMAC
+004662  COMMAC: JSR PC, CC
+004666          JMP NEXT
+004672          .HEAD "EMIT", EMITC
+004704  EMITC:  MOV (SP)+, R0
+004706          JSR PC, EMIT
+004712          JMP NEXT
+004716          .HEAD "KEY", KEYC
+004730  KEYC:   JSR PC, KEY
+004734          MOV R0, -(SP)
+004736          JMP NEXT
+004742          .HEAD "CR", CRC
+004752  CRC:    JSR PC, DOCR
+004756          JMP NEXT
+004762          .HEAD ".", DOTC
+004772  DOTC:   MOV (SP)+, R0
+004774          JSR PC, DOT
+005000          JMP NEXT
+005004          .HEAD ":", COLNC
+005014  COLNC:  JSR PC, WORD                ; read the name into WORDBUF
+005020          MOV @#DPPTR, @#OLDDP        ; an error in the body discards the definition
+005026          MOV @#LATEST, @#OLDDIC
+005034          MOV #DOCOL, -(SP)
+005040          JSR PC, CREATEHDR
+005044          MOV #1, @#STATE
+005052          JMP NEXT
+005056          .HEAD ";", SEMIC, 0o200
+005066  SEMIC:  MOV #EXITCFA, -(SP)
+005072          JSR PC, CC
+005076          CLR @#STATE
+005102          JMP NEXT
+005106          .HEAD "VARIABLE", VARC
+005124  VARC:   JSR PC, WORD                ; read the name into WORDBUF
+005130          MOV #DOVAR, -(SP)
+005134          JSR PC, CREATEHDR
+005140          CLR -(SP)
+005142          JSR PC, CC
+005146          JMP NEXT
+005152          .HEAD "CONSTANT", CONSC
+005170  CONSC:  JSR PC, WORD                ; read the name into WORDBUF
+005174          MOV #DOCON, -(SP)
+005200          JSR PC, CREATEHDR
+005204          JSR PC, CC
+005210          JMP NEXT
+005214          .HEAD "CREATE", CREATEC
+005230  CREATEC: JSR PC, WORD               ; read the name into WORDBUF
+005234          MOV #DOVAR, -(SP)
+005240          JSR PC, CREATEHDR
+005244          JMP NEXT
+005250          .HEAD "IMMEDIATE", IMMC
+005270  IMMC:   MOV @#LATEST, R0
+005274          BISB #0o200, 3(R0)
+005302          JMP NEXT
+005306          .HEAD "LITERAL", LITW, 0o200
+005324  LITW:   MOV #LITCFA, -(SP)
+005330          JSR PC, CC
+005334          JSR PC, CC
+005340          JMP NEXT
+005344          .HEAD "IF", IFW, 0o200
+005354  IFW:    MOV #QBRCFA, -(SP)          ; IF is a zero-branch: jump if false
+005360          JSR PC, CC
+005364          MOV @#DPPTR, -(SP)          ; the offset cell, kept on the stack
+005370          CLR -(SP)
+005372          JSR PC, CC
+005376          JMP NEXT
+005402          .HEAD "ELSE", ELSEW, 0o200
+005414  ELSEW:  MOV #BRCFA, -(SP)
+005420          JSR PC, CC
+005424          MOV @#DPPTR, -(SP)          ; this ELSE's offset cell
+005430          CLR -(SP)
+005432          JSR PC, CC
+005436          MOV 2(SP), R1               ; IF's cell, one below
+005442          MOV @#DPPTR, R2
+005446          SUB R1, R2
+005450          SUB #2, R2                  ; IP lands past IF's cell
+005454          MOV R2, (R1)                ; patch IF to branch here
+005456          JMP NEXT
+005462          .HEAD "THEN", THENW, 0o200
+005474  THENW:  MOV (SP)+, R0
+005476          MOV @#DPPTR, R1
+005502          SUB R0, R1
+005504          SUB #2, R1                  ; IP lands past the offset cell
+005510          MOV R1, (R0)
+005512          JMP NEXT
+005516          .HEAD "BEGIN", BEGINW, 0o200
+005532  BEGINW: MOV @#DPPTR, -(SP)
+005536          JMP NEXT
+005542          .HEAD "UNTIL", UNTILW, 0o200
+005556  UNTILW: MOV #QBRCFA, -(SP)
+005562          JSR PC, CC
+005566          MOV @#DPPTR, R1
+005572          ADD #2, R1                  ; IP lands past the offset cell
+005576          MOV (SP)+, R0
+005600          SUB R1, R0
+005602          MOV R0, -(SP)
+005604          JSR PC, CC
+005610          JMP NEXT
+005614          .HEAD "WHILE", WHILEW, 0o200
+005630  WHILEW: MOV #QBRCFA, -(SP)          ; branch out when the flag is false
+005634          JSR PC, CC
+005640          CLR -(SP)                   ; reserve the offset cell
+005642          JSR PC, CC
+005646          MOV @#DPPTR, R0             ; the placeholder's address (CC clobbers R0)
+005652          SUB #2, R0
+005656          MOV R0, -(SP)
+005660          JMP NEXT
+005664          .HEAD "REPEAT", REPEATW, 0o200
+005700  REPEATW: MOV (SP)+, R0              ; WHILE's offset cell
+005702          MOV (SP)+, R1               ; BEGIN's address
+005704          MOV R0, -(SP)               ; WHILE's cell, patched below
+005706          MOV R1, -(SP)               ; BEGIN's address survives the CC
+005710          MOV #BRCFA, -(SP)
+005714          JSR PC, CC                  ; back-branch cell
+005720          MOV @#DPPTR, R2
+005724          ADD #2, R2                  ; IP lands past this offset cell
+005730          SUB R2, (SP)                ; branch back to BEGIN
+005732          JSR PC, CC                  ; back-branch offset
+005736          MOV @#DPPTR, R2             ; final DP = the exit target
+005742          MOV (SP)+, R0               ; WHILE's cell
+005744          SUB R0, R2
+005746          SUB #2, R2                  ; IP lands past WHILE's cell
+005752          MOV R2, (R0)                ; patch WHILE to here
+005754          JMP NEXT
+005760          .HEAD "DO", DOW, 0o200
+005770  DOW:    MOV #DOCFA, -(SP)
+005774          JSR PC, CC
+006000          MOV @#DPPTR, -(SP)          ; loop body start
+006004          JMP NEXT
+006010          .HEAD "LOOP", LOOPW, 0o200
+006022  LOOPW:  MOV #LOOPCFA, -(SP)
+006026          JSR PC, CC
+006032          MOV @#DPPTR, R1
+006036          ADD #2, R1                  ; IP lands past the offset cell
+006042          MOV (SP)+, R0
+006044          SUB R1, R0
+006046          MOV R0, -(SP)
+006050          JSR PC, CC
+006054          JMP NEXT

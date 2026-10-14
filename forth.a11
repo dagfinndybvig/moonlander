@@ -69,6 +69,8 @@ QRD:    JSR PC, KEY
         BEQ QRDD
         CMP R0, #0o177
         BEQ QRBS
+        CMP R1, #TIB+64.
+        BGE QRD         ; line full: drop the character
         MOV R0, -(SP)               ; the char survives the echo
         JSR PC, EMIT
         MOV (SP)+, R0
@@ -76,6 +78,8 @@ QRD:    JSR PC, KEY
         BR QRD
 QRBS:   CMP R1, #TIB
         BLS QRD         ; empty line, nothing to erase
+        TST @#CURCOL
+        BEQ QRD         ; column 0: no character to erase on this row
         DEC @#CURCOL
         DEC R1
         MOV #0o40, R0
@@ -92,7 +96,11 @@ QINT:   JSR PC, WORD
         JSR PC, INTERP
         BR QINT
 
-QERR:   MOV #0o77, R0   ; '?'
+QERR:   TST @#STATE
+        BEQ QERR1
+        MOV @#OLDDP, @#DPPTR        ; aborting a definition: discard it
+        MOV @#OLDDIC, @#LATEST
+QERR1:  MOV #0o77, R0   ; '?'
         JSR PC, EMIT
         JSR PC, DOCR
         MOV #SP0, SP
@@ -331,7 +339,7 @@ DOT1:   MOV #PTAB, R1
         CLR @#ZFLG
 DOT2:   CLR R2
 DOT3:   CMP R0, (R1)
-        BLT DOT4
+        BCS DOT4               ; unsigned: -32768 (NEG overflow) still divides
         SUB (R1), R0
         INC R2
         BR DOT3
@@ -372,7 +380,9 @@ WRDCH:  TST R2
         BEQ WRDEOS
         MOV #WORDBUF+1, R0
         CLR R3
-WRDCP:  CMP R2, #0o141              ; 'a'
+WRDCP:  CMP R3, #17.
+        BGE WRDDN       ; name cap: 17 chars fit before the kernel cells
+        CMP R2, #0o141              ; 'a'
         BLT WRDST
         CMP R2, #0o172              ; 'z'
         BGT WRDST
@@ -506,6 +516,8 @@ NFLG:    .BLKW 1
 ZFLG:    .BLKW 1
 DPPTR:   .BLKW 1
 LATEST:  .WORD LASTHD               ; patched by the assembler to the last header
+OLDDP:   .BLKW 1                    ; DP and LATEST as ':' found them, for QERR
+OLDDIC:  .BLKW 1
 STATE:   .BLKW 1
 INPTR:   .BLKW 1
 CURROW:  .BLKW 1
@@ -669,6 +681,8 @@ DOTC:   MOV (SP)+, R0
 
         .HEAD ":", COLNC
 COLNC:  JSR PC, WORD                ; read the name into WORDBUF
+        MOV @#DPPTR, @#OLDDP        ; an error in the body discards the definition
+        MOV @#LATEST, @#OLDDIC
         MOV #DOCOL, -(SP)
         JSR PC, CREATEHDR
         MOV #1, @#STATE
