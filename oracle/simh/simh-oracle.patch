@@ -1,0 +1,80 @@
+diff --git a/PDP11/pdp11_stddev.c b/PDP11/pdp11_stddev.c
+index ce156c5..1f2c49b 100644
+--- a/PDP11/pdp11_stddev.c
++++ b/PDP11/pdp11_stddev.c
+@@ -83,6 +83,7 @@ int32 clk_tps = 60;                                     /* ticks/second */
+ int32 clk_default = 60;                                 /* default ticks/second */
+ int32 clk_fie = 0;                                      /* force IE = 1 */
+ int32 clk_fnxm = 0;                                     /* force NXM on reg */
++int32 clk_ipt = 0;                                      /* ORACLE: fixed instructions per tick, 0 = calibrated */
+ int32 tmxr_poll = CLK_DELAY;                            /* term mux poll */
+ int32 tmr_poll = CLK_DELAY;                             /* timer poll */
+ 
+@@ -257,6 +258,7 @@ REG clk_reg[] = {
+     { DRDATA (DEFTPS, clk_default, 16), PV_LEFT + REG_HRO },
+     { FLDATA (FIE, clk_fie, 0), REG_HIDDEN },
+     { FLDATA (FNXM, clk_fnxm, 0), REG_HIDDEN },
++    { DRDATAD (IPT, clk_ipt, 32, "ORACLE: fixed instructions per tick, 0 = calibrated wall clock"), PV_LEFT },
+     { NULL }
+     };
+ 
+@@ -540,6 +542,12 @@ if ((clk_csr & CSR_IE) || clk_fie) {
+     SET_INT (CLK);
+     sim_debug (DBG_INT, &clk_dev, "SET_INT(CLK)\n");
+     }
++if (clk_ipt) {                                          /* ORACLE: deterministic tick */
++    sim_activate (uptr, clk_ipt);
++    tmr_poll = clk_ipt;
++    tmxr_poll = clk_ipt;
++    return SCPE_OK;
++    }
+ t = sim_rtcn_calb (clk_tps, TMR_CLK);                   /* calibrate clock */
+ sim_activate_after (uptr, 1000000/clk_tps);             /* reactivate unit */
+ tmr_poll = t;                                           /* set timer poll */
+@@ -570,6 +578,15 @@ else {
+ clk_tps = clk_default;                                  /* set default tps */
+ clk_csr = CSR_DONE;                                     /* set done */
+ CLR_INT (CLK);
++if (clk_ipt) {                                          /* ORACLE: deterministic tick */
++    sim_rtcn_calb (0, TMR_CLK);                         /* stop calibration of timer 0 */
++    sim_register_clock_unit_tmr (NULL, TMR_CLK);        /* detach unit from timer services */
++    if (!sim_is_active (&clk_unit))                     /* line clock free-runs across RESET */
++        sim_activate (&clk_unit, clk_ipt);
++    tmr_poll = clk_ipt;
++    tmxr_poll = clk_ipt;
++    return SCPE_OK;
++    }
+ tmr_poll = sim_rtcn_init_unit (&clk_unit, clk_unit.wait, TMR_CLK);/* init line clock */
+ sim_activate_after (&clk_unit, 1000000/clk_tps);        /* activate unit */
+ tmr_poll = clk_unit.wait;                               /* set timer poll */
+diff --git a/PDP11/pdp11_vt.c b/PDP11/pdp11_vt.c
+index 9785d32..7584fd6 100644
+--- a/PDP11/pdp11_vt.c
++++ b/PDP11/pdp11_vt.c
+@@ -120,8 +120,11 @@ DIB vt_dib = { IOBA_AUTO, IOLN_VT11, &vt_rd, &vt_wr,
+ UNIT vt_unit = {
+     UDATA (&vt_svc, 0, 0),      VT11_DELAY};
+ 
++int32 vt_ipc = 0;           /* ORACLE: CPU instructions per VT11 cycle, 0 = wall clock */
++
+ REG vt_reg[] = {
+     { DRDATAD (CYCLE,  vt_unit.wait, 24, "VT11/VS60 cycle"), REG_NZ + PV_LEFT },
++    { DRDATAD (IPC,    vt_ipc, 32, "ORACLE: fixed CPU instructions per VT11 cycle, 0 = wall clock"), PV_LEFT },
+     { GRDATA (DEVADDR, vt_dib.ba, DEV_RDX, 32, 0), REG_HRO },
+     { GRDATA (DEVVEC, vt_dib.vec, DEV_RDX, 16, 0), REG_HRO },
+     { NULL }  };
+@@ -318,8 +321,12 @@ t_stat
+ vt_svc(UNIT *uptr)
+ {
+     sim_debug (DEB_TRC, &vt_dev, "vt_svc(wait=%d,DPC=0%o)\n", uptr->wait, vt11_get_dpc());
+-    if (vt11_cycle(uptr->wait, 0))
+-        sim_activate_after (uptr, uptr->wait);  /* running; reschedule */
++    if (vt11_cycle(uptr->wait, 0)) {
++        if (vt_ipc)                             /* ORACLE: deterministic */
++            sim_activate (uptr, vt_ipc);
++        else
++            sim_activate_after (uptr, uptr->wait);  /* running; reschedule */
++        }
+     if (vt_stop_flag) {
+         vt_stop_flag = FALSE;                   /* reset flag after we notice it */
+         return SCPE_STOP;
