@@ -22,7 +22,9 @@ use crate::chargen;
 /// Visible face of the GT40's VR14: 1024 x 768 raster units, origin bottom left.
 pub const FACE_W: i32 = 1024;
 pub const FACE_H: i32 = 768;
-/// Character pitch and line pitch at the GT40's normal jumper settings.
+/// Character pitch and line pitch. The GT40 guide gives 73 characters to a
+/// line and 31 lines, which the VT11 manual's Table 2-12 makes jumper W5;
+/// the 14 and 24 units for W5 are simh's (vt11.h).
 pub const CHAR_PITCH: i32 = 14;
 pub const LINE_PITCH: i32 = 24;
 
@@ -37,7 +39,7 @@ const T_CHAR: f64 = 20.6;
 const T_CONTROL_CHAR: f64 = 1.0;
 /// Light pen amplifier inhibit after a hit (VT11 manual, appendix B).
 const T_LP_INHIBIT: f64 = 70.0;
-/// Blink flip-flop half period (VT11 manual 2.2.9).
+/// Blink flip-flop half period (VT11 manual 2.2.8.5 and Figure 2-16).
 const T_BLINK_HALF: f64 = 266_000.0;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -562,7 +564,7 @@ impl Vt11 {
     /// 01000-01777, and clocks it at 5 MHz times normalized/02000: anything
     /// from 512 to 1023 units takes about 205 us, and in general a vector
     /// takes 0.2 us times the next power of two above its length (VT11
-    /// manual 2.2.10.3).
+    /// manual 2.2.10.2 and 2.2.10.3).
     pub fn vector_time(m: i32) -> f64 {
         if m <= 0 {
             return 0.0;

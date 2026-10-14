@@ -71,9 +71,6 @@ pub struct Terminal {
     pub console_lights: u16,
     /// Whether the VT11 answers on the bus (off for processor-only tests).
     pub has_vt11: bool,
-    /// Bus references made since this counter was last cleared; the
-    /// processor model times its instructions by them.
-    pub refs: u32,
     /// When set, every bus access is logged here: (write?, address, value).
     pub access_log: Option<Vec<(bool, u16, u16)>>,
     /// Times at which the bell was rung (any write to the display status
@@ -118,7 +115,6 @@ impl Terminal {
             switches: 0,
             console_lights: 0,
             has_vt11: true,
-            refs: 0,
             access_log: None,
             bells: Vec::new(),
             mem_hash: 0,
@@ -169,7 +165,6 @@ impl Terminal {
         if a & 1 != 0 {
             return Err(Fault(a));
         }
-        self.refs += 1;
         let v = if self.in_core(a) { Ok(self.mem[(a >> 1) as usize]) } else { self.io_read(a) };
         if let (Some(log), Ok(v)) = (&mut self.access_log, &v) {
             log.push((false, a, *v));
@@ -184,7 +179,6 @@ impl Terminal {
         if let Some(log) = &mut self.access_log {
             log.push((true, a, v));
         }
-        self.refs += 1;
         if self.in_core(a) {
             self.store(a, v);
             return Ok(());
@@ -202,7 +196,6 @@ impl Terminal {
         if let Some(log) = &mut self.access_log {
             log.push((true, a, v as u16));
         }
-        self.refs += 1;
         if self.in_core(wa) {
             let w = self.mem[(wa >> 1) as usize];
             let nw = if a & 1 != 0 { (w & 0x00FF) | ((v as u16) << 8) } else { (w & 0xFF00) | v as u16 };

@@ -45,7 +45,9 @@ const GLOW_CELL: f32 = 4.0;
 const FACE: f32 = 0.0012;
 
 /// Relative beam current at each of the VT11's eight intensity levels
-/// (MODEL; the VT11 manual gives no figures).
+/// (MODEL). The VR14 manual (3.5, Figure 3-6) has the spread between the
+/// levels set by the operator's contrast and brightness controls, so there
+/// is no one figure to take.
 pub fn level(l: u8) -> f32 {
     0.30 + 0.70 * l as f32 / 7.0
 }

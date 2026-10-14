@@ -67,7 +67,6 @@ impl Machine {
 
     pub fn read_word(&mut self, a: u16) -> Result<u16, Fault> {
         if a == PSW_ADDR {
-            self.bus.refs += 1;
             if let Some(log) = &mut self.bus.access_log {
                 log.push((false, a, self.psw));
             }
@@ -78,7 +77,6 @@ impl Machine {
 
     pub fn write_word(&mut self, a: u16, v: u16) -> Result<(), Fault> {
         if a == PSW_ADDR {
-            self.bus.refs += 1;
             if let Some(log) = &mut self.bus.access_log {
                 log.push((true, a, v));
             }
@@ -95,7 +93,6 @@ impl Machine {
 
     pub fn write_byte(&mut self, a: u16, v: u8) -> Result<(), Fault> {
         if a & !1 == PSW_ADDR {
-            self.bus.refs += 1;
             if let Some(log) = &mut self.bus.access_log {
                 log.push((true, a, v as u16));
             }
@@ -154,7 +151,6 @@ impl Machine {
             self.bus.sync();
             if let Some((_, vector)) = self.bus.pending_interrupt((self.psw >> 5) & 7) {
                 self.waiting = false;
-                self.bus.refs = 0;
                 if self.take_interrupt(vector).is_err() {
                     self.halted = true; // double bus error
                 }
@@ -166,7 +162,6 @@ impl Machine {
             self.bus.sleep();
             return;
         }
-        self.bus.refs = 0;
         let start = self.bus.t;
         let pc = self.r[7];
         let result = self.execute();
