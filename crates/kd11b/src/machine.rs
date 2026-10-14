@@ -68,6 +68,16 @@ pub struct Machine {
     pub last_insn: u16,
     /// Memory references made by the instruction in progress.
     pub(crate) refs: u32,
+    /// Addresses of bus errors taken, for diagnostics.
+    pub faults: Vec<u16>,
+    /// When set, every bus access is logged here: (write?, address, value).
+    pub access_log: Option<Vec<(bool, u16, u16)>>,
+    /// Console switch register (177570, read) and display register (write).
+    /// The GT40 User's Guide boot procedure loads 166000 through the switches.
+    pub switches: u16,
+    pub console_lights: u16,
+    /// Whether the VT11 answers on the bus (off for CPU-only tests).
+    pub has_vt11: bool,
 }
 
 struct Mem<'a>(&'a [u16]);
@@ -96,6 +106,11 @@ impl Machine {
             instructions: 0,
             last_insn: 0,
             refs: 0,
+            faults: Vec::new(),
+            access_log: None,
+            switches: 0,
+            console_lights: 0,
+            has_vt11: true,
         };
         m.unibus_init();
         m
@@ -127,15 +142,19 @@ impl Machine {
             return Err(Fault(a));
         }
         self.refs += 1;
-        if (a as usize) < self.mem.len() * 2 {
-            return Ok(self.mem[(a >> 1) as usize]);
+        let v = if (a as usize) < self.mem.len() * 2 { Ok(self.mem[(a >> 1) as usize]) } else { self.io_read(a) };
+        if let (Some(log), Ok(v)) = (&mut self.access_log, &v) {
+            log.push((false, a, *v));
         }
-        self.io_read(a)
+        v
     }
 
     pub fn write_word(&mut self, a: u16, v: u16) -> Result<(), Fault> {
         if a & 1 != 0 {
             return Err(Fault(a));
+        }
+        if let Some(log) = &mut self.access_log {
+            log.push((true, a, v));
         }
         self.refs += 1;
         if (a as usize) < self.mem.len() * 2 {
@@ -152,6 +171,9 @@ impl Machine {
 
     pub fn write_byte(&mut self, a: u16, v: u8) -> Result<(), Fault> {
         let wa = a & !1;
+        if let Some(log) = &mut self.access_log {
+            log.push((true, a, v as u16));
+        }
         self.refs += 1;
         if (wa as usize) < self.mem.len() * 2 {
             let w = &mut self.mem[(wa >> 1) as usize];
@@ -162,6 +184,9 @@ impl Machine {
     }
 
     fn io_read(&mut self, a: u16) -> Result<u16, Fault> {
+        if !self.has_vt11 && (0o172000..=0o172006).contains(&a) {
+            return Err(Fault(a));
+        }
         Ok(match a {
             0o172000 => self.vt11.read_dpc(),
             0o172002 => self.vt11.read_dsr(),
@@ -176,6 +201,7 @@ impl Machine {
             0o177564 => self.console.tps,
             0o177566 => 0,
             0o177776 => self.psw,
+            0o177570 => self.switches,
             0o175610..=0o175616 => match &mut self.host {
                 Some(h) => match a {
                     0o175610 => h.rcsr,
@@ -192,6 +218,9 @@ impl Machine {
     /// A write to the I/O page. `byte` carries (high byte?, value) for MOVB
     /// and friends; device registers here are written as words.
     fn io_write(&mut self, a: u16, v: u16, byte: Option<(bool, u8)>) -> Result<(), Fault> {
+        if !self.has_vt11 && (0o172000..=0o172006).contains(&a) {
+            return Err(Fault(a));
+        }
         let cur = if byte.is_some() { self.io_read(a)? } else { 0 };
         let v = match byte {
             Some((true, b)) => (cur & 0x00FF) | ((b as u16) << 8),
@@ -217,6 +246,7 @@ impl Machine {
             0o177564 => self.console.tps = (self.console.tps & 0o200) | (v & 0o100),
             0o177566 => {}
             0o177776 => self.psw = v & 0o357,
+            0o177570 => self.console_lights = v,
             0o175610..=0o175616 => match &mut self.host {
                 Some(h) => match a {
                     0o175610 => h.rcsr = v & 0o100,
@@ -316,7 +346,10 @@ impl Machine {
         self.instructions += 1;
         let (outcome, class) = match result {
             Ok(e) => (e.outcome, e.class),
-            Err(_) => (Outcome::Trap(0o4), Class::Trap),
+            Err(Fault(a)) => {
+                self.faults.push(a);
+                (Outcome::Trap(0o4), Class::Trap)
+            }
         };
         let mut extra = 0.0;
         match outcome {
