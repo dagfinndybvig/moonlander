@@ -1,3 +1,5 @@
+> **A fork standing on the shoulders of giants.** This began as a fork of [mctar/moonlander](https://github.com/mctar/moonlander), and we forked it for its tools: the original repository contains a model of the GT40 written from DEC's manuals — the PDP-11/05, the VT11 display processor, the console — faithful enough that the recovered Moonlander binary runs on it instruction for instruction. A machine modelled that well is worth more than one game. The work of the fork is [FORTH.md](FORTH.md): a small Forth, assembled from scratch, that runs bare metal on the same emulated hardware — our way of showing that the machine which could fly the lunar module could also carry a high-level language, interactively, inside its 8K words.
+
 # Moonlander, recovered
 
 Jack Burness wrote Moonlander in February 1973 for the DEC GT40, a PDP-11/05 with a vector display and a light pen, as a demonstration for trade shows. You fly a lunar module with the light pen. Point at the throttle bar to set the engine and at the arrows to turn, and land gently somewhere flat. Land beside the McDonald's and the astronaut walks over and orders two cheeseburgers and a Big Mac to go.

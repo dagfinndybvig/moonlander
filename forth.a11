@@ -1,0 +1,802 @@
+; GT40 FORTH -- a small bare-metal Forth for the PDP-11/05 + VT11.
+;
+; Indirect-threaded. Registers: R6=SP (data stack, grows down),
+; R5=RP (return stack), R4=IP, R3=W, R0-R2 scratch.
+;
+; NEXT: MOV (R4)+,R3 / JMP @(R3)+ -- the code field of every word holds
+; the address of its machine code; a colon word's code field holds DOCOL.
+; The outer interpreter runs one word at a time through a trampoline at
+; SCRATCH, so machine words can end in NEXT and still return to it.
+;
+; Text screen: a VT11 display list of 24 rows x 32 characters, one lit
+; point as the cursor, refreshed by DMA every frame. EMIT writes straight
+; into the list.
+;
+; Memory map (octal):
+;   01000-03777   kernel code
+;   04000...      dictionary (headers + word code, grows up)
+;   30000         display list (24 rows x 20 words + cursor point + JMP)
+;   32000         TIB, WORDBUF, kernel cells
+;   33000         return stack (grows down)
+;   34000         data stack (grows down)
+
+; ---- constants -------------------------------------------------------------
+
+LASTHD = 0              ; link of the first dictionary header
+DICT0 = 0o4000          ; kernel dictionary (headers + code)
+DP0 = 0o10000           ; runtime dictionary, well above the kernel code
+DLIST = 0o30000
+CURX = DLIST+0o1702     ; cursor point x word (DLIST+962)
+CURY = DLIST+0o1704
+TIB = 0o32000
+WORDBUF = 0o32100
+X0 = 288.               ; left edge of the 32-char field
+Y0 = 740.               ; baseline of row 0
+RP0 = 0o33000
+SP0 = 0o34000
+
+; ---- start -----------------------------------------------------------------
+
+        .ORG 0o1000
+
+START:  MOV #SP0, SP
+        MOV #RP0, R5
+        MOV #DP0, @#DPPTR
+        CLR @#STATE
+        JSR PC, CLRSCR
+        MOV #DLIST, @#0o172000      ; DPC: load and run the list
+        MOV #BANNER, R1
+BAN:    MOVB (R1)+, R0
+        BIC #0o177400, R0
+        BEQ BAND
+        JSR PC, EMIT
+        BR BAN
+BAND:   JSR PC, DOCR
+        JSR PC, DOCR
+        JMP QUIT
+
+BANNER: .ASCII "GT40 FORTH"
+        .BYTE 0
+
+; ---- QUIT: read a line, interpret it, repeat --------------------------------
+
+QUIT:   MOV #RP0, R5
+        CLR @#STATE
+        CLR @#INPTR
+        MOV #TIB, R1
+QRD:    JSR PC, KEY
+        CMP R0, #0o15
+        BEQ QRDD
+        CMP R0, #0o177
+        BEQ QRBS
+        MOV R0, -(SP)               ; the char survives the echo
+        JSR PC, EMIT
+        MOV (SP)+, R0
+        MOVB R0, (R1)+
+        BR QRD
+QRBS:   CMP R1, #TIB
+        BLS QRD         ; empty line, nothing to erase
+        DEC @#CURCOL
+        DEC R1
+        MOV #0o40, R0
+        JSR PC, PUTCH
+        JSR PC, SETCUR
+        BR QRD
+QRDD:   CLRB (R1)
+        JSR PC, DOCR
+        CLR @#INPTR
+QINT:   JSR PC, WORD
+        MOVB @#WORDBUF, R0
+        BIC #0o177400, R0
+        BEQ QUIT        ; end of line
+        JSR PC, INTERP
+        BR QINT
+
+QERR:   MOV #0o77, R0   ; '?'
+        JSR PC, EMIT
+        JSR PC, DOCR
+        MOV #SP0, SP
+        MOV #RP0, R5
+        CLR @#STATE
+        JMP QUIT
+
+; ---- INTERP: interpret one word from WORDBUF --------------------------------
+; FIND gives cfa (R0) and flags (R1). Immediate words always execute; other
+; words execute in interpret state and compile in compile state. Numbers
+; push or compile as LIT. Unknown words ring the bell via QERR.
+
+INTERP: MOV (SP)+, @#INTRET         ; save return, leave the data stack clean
+        JSR PC, FIND
+        TST R0
+        BEQ INUM
+        BIT #0o200, R1              ; immediate?
+        BNE IEXEC
+        TST @#STATE
+        BEQ IEXEC
+        MOV R0, -(SP)               ; compile the cfa
+        JSR PC, CC
+        JMP @INTRET
+IEXEC:  MOV R0, @#SCRATCH           ; trampoline: run one word, come back
+        MOV #IRET, @#SCRATCH+2
+        MOV #SCRATCH, R4
+        JMP NEXT
+INUM:   JSR PC, NUMB
+        TST R0
+        BEQ IQERR
+        TST @#STATE
+        BEQ INUM1
+        MOV R1, -(SP)               ; value first, then LIT: CC takes 2(SP)
+        MOV #LITCFA, -(SP)
+        JSR PC, CC
+        JSR PC, CC
+        JMP @INTRET
+INUM1:  MOV R1, -(SP)               ; push the value
+        JMP @INTRET
+IQERR:  JSR PC, QERR
+
+IRET:   .WORD IRET1
+IRET1:  JMP @INTRET
+INTRET: .WORD 0
+
+; ---- inner interpreter -------------------------------------------------------
+
+NEXT:   MOV (R4)+, R3
+        JMP @(R3)+
+
+DOCOL:  MOV R4, -(R5)               ; colon code: push IP, enter the thread
+        MOV R3, R4                  ; R3 already points at the first body cell
+        JMP NEXT
+
+DOCON:  MOV (R3), -(SP)             ; constant: push the parameter
+        JMP NEXT
+
+DOVAR:  MOV R3, -(SP)               ; variable: push the parameter address
+        JMP NEXT
+
+EXIT:   MOV (R5)+, R4
+        JMP NEXT
+
+; ---- runtime code-field cells (no headers) -----------------------------------
+
+LITCFA:  .WORD LIT
+BRCFA:   .WORD BRC
+QBRCFA:  .WORD QBRC
+DOCFA:   .WORD DOF
+LOOPCFA: .WORD LOOPR
+EXITCFA: .WORD EXIT
+
+LIT:    MOV (R4)+, -(SP)
+        JMP NEXT
+BRC:    ADD (R4)+, R4               ; branch: IP += offset
+        JMP NEXT
+QBRC:   TST (SP)+                   ; 0branch: pop, branch if zero
+        BNE QBRC1
+        ADD (R4)+, R4
+        JMP NEXT
+QBRC1:  ADD #2, R4               ; skip the offset cell (IP is word-addressed)
+        JMP NEXT
+DOF:    MOV (SP)+, R0               ; ( limit index -- )
+        MOV (SP)+, R1
+        MOV R1, -(R5)               ; limit first, then index
+        MOV R0, -(R5)               ; index on top of the return stack
+        JMP NEXT
+LOOPR:  INC (R5)
+        CMP (R5), 2(R5)
+        BNE LOOPR1
+        ADD #4, R5
+        ADD #2, R4               ; skip the offset cell (IP is word-addressed)
+        JMP NEXT
+LOOPR1: ADD (R4)+, R4
+        JMP NEXT
+
+; ---- subroutines --------------------------------------------------------------
+
+; KEY: poll the console, character in R0
+KEY:    TSTB @#177560
+        BPL KEY
+        MOVB @#177562, R0
+        BIC #0o177400, R0
+        RTS PC
+
+; PUTCH: write character R0 at CURROW/CURCOL, no advance. Preserves R1.
+PUTCH:  MOV R1, -(SP)
+        MOV @#CURROW, R1
+        MOV R1, R2
+        ASL R1
+        ASL R1                      ; 4r
+        ADD R2, R1                  ; 5r
+        ASL R1
+        ASL R1
+        ASL R1                      ; 40r
+        ADD #DLIST+8, R1
+        ADD @#CURCOL, R1
+        MOVB R0, (R1)
+        MOV (SP)+, R1
+        RTS PC
+
+; EMIT: character in R0; CR moves a line, else write and advance
+EMIT:   CMP R0, #0o15
+        BEQ DOCR
+        JSR PC, PUTCH
+        INC @#CURCOL
+        CMP @#CURCOL, #32.
+        BLT EMIT1
+        JSR PC, DOCR                ; wrap: next line
+        RTS PC
+EMIT1:  JSR PC, SETCUR
+        RTS PC
+
+; DOCR: carriage return / line feed
+DOCR:   CLR @#CURCOL
+        INC @#CURROW
+        CMP @#CURROW, #24.
+        BLT DOCR1
+        DEC @#CURROW
+        JSR PC, SCROLL
+DOCR1:  JSR PC, SETCUR
+        RTS PC
+
+; SETCUR: patch the cursor point from CURROW/CURCOL. Preserves R1.
+SETCUR: MOV R1, -(SP)
+        MOV @#CURCOL, R1
+        MOV R1, R2
+        ASL R2                      ; 2c
+        ASL R1
+        ASL R1
+        ASL R1
+        ASL R1                      ; 16c
+        SUB R2, R1                  ; 14c
+        ADD #X0, R1
+        BIS #0o40000, R1
+        MOV R1, @#CURX
+        MOV @#CURROW, R1
+        MOV R1, R2
+        ASL R1
+        ASL R1
+        ASL R1
+        ASL R1                      ; 16r
+        MOV R2, R3
+        ASL R2
+        ASL R2
+        ASL R2                      ; 8r
+        ADD R2, R1                  ; 24r
+        NEG R1
+        ADD #Y0, R1
+        MOV R1, @#CURY
+        MOV (SP)+, R1
+        RTS PC
+
+; SCROLL: rows 1..23 down to 0..22, clear row 23. Preserves R1.
+SCROLL: MOV R1, -(SP)
+        CLR R2
+SCRL1:  MOV R2, R0
+        ASL R0
+        ASL R0
+        ASL R0                      ; 8r
+        MOV R0, R3
+        ASL R0
+        ASL R0                      ; 32r
+        ADD R3, R0                  ; 40r
+        ADD #DLIST+8+40., R0        ; source: row r+1
+        MOV R0, R1
+        SUB #40., R1                ; destination: row r
+        MOV #16., R3
+SCRL2:  MOV (R0)+, (R1)+
+        DEC R3
+        BNE SCRL2
+        INC R2
+        CMP R2, #23.
+        BLT SCRL1
+        MOV #DLIST+8+920., R0       ; clear row 23
+        MOV #16., R3
+SCRL3:  CLR (R0)+
+        DEC R3
+        BNE SCRL3
+        MOV (SP)+, R1
+        RTS PC
+
+; CLRSCR: build the whole display list
+CLRSCR: MOV #DLIST, R0
+        MOV #24., R1
+        MOV #Y0, R2
+CLRS1:  MOV #0o114000, (R0)+        ; point mode
+        MOV #X0, (R0)+              ; position, no intensify
+        MOV R2, (R0)+
+        MOV #0o100000, (R0)+        ; character mode
+        MOV #16., R3
+CLRS2:  CLR (R0)+
+        DEC R3
+        BNE CLRS2
+        SUB #24., R2
+        DEC R1
+        BNE CLRS1
+        MOV #0o114000, (R0)+        ; the cursor point
+        MOV #X0+0o40000, (R0)+
+        MOV #Y0, (R0)+
+        MOV #0o160000, (R0)+        ; JMP
+        MOV #DLIST, (R0)+
+        CLR @#CURROW
+        CLR @#CURCOL
+        RTS PC
+
+; DOT: print R0 as signed decimal with a trailing space
+DOT:    TST R0
+        BPL DOT1
+        MOV R0, -(SP)
+        MOV #0o55, R0               ; '-'
+        JSR PC, EMIT
+        MOV (SP)+, R0
+        NEG R0
+DOT1:   MOV #PTAB, R1
+        CLR @#ZFLG
+DOT2:   CLR R2
+DOT3:   CMP R0, (R1)
+        BLT DOT4
+        SUB (R1), R0
+        INC R2
+        BR DOT3
+DOT4:   TST R2
+        BNE DOT5
+        TST @#ZFLG
+        BEQ DOT6                    ; suppress leading zeros only
+DOT5:   INC @#ZFLG
+        MOV R0, -(SP)               ; remainder survives the EMIT
+        ADD #0o60, R2
+        MOV R2, R0
+        JSR PC, EMIT
+        MOV (SP)+, R0
+DOT6:   ADD #2, R1
+        CMP R1, #PTAB+10.
+        BLT DOT2
+        TST @#ZFLG
+        BNE DOT7
+        MOV #0o60, R0               ; lone zero
+        JSR PC, EMIT
+DOT7:   MOV #0o40, R0               ; trailing space
+        JSR PC, EMIT
+        RTS PC
+
+PTAB:   .WORD 10000., 1000., 100., 10., 1
+
+; WORD: parse the next blank-delimited word from TIB at INPTR into
+; WORDBUF as a counted string, uppercased. Empty at end of line.
+WORD:   MOV @#INPTR, R1
+        ADD #TIB, R1
+WRDSK:  MOVB (R1), R2
+        BIC #0o177400, R2
+        CMP R2, #0o40
+        BNE WRDCH
+        INC R1
+        BR WRDSK
+WRDCH:  TST R2
+        BEQ WRDEOS
+        MOV #WORDBUF+1, R0
+        CLR R3
+WRDCP:  CMP R2, #0o141              ; 'a'
+        BLT WRDST
+        CMP R2, #0o172              ; 'z'
+        BGT WRDST
+        BIC #0o40, R2
+WRDST:  MOVB R2, (R0)+
+        INC R3
+        INC R1
+        MOVB (R1), R2
+        BIC #0o177400, R2
+        BEQ WRDDN
+        CMP R2, #0o40
+        BNE WRDCP
+WRDDN:  SUB #TIB, R1
+        MOV R1, @#INPTR
+        MOVB R3, @#WORDBUF
+        RTS PC
+WRDEOS: SUB #TIB, R1
+        MOV R1, @#INPTR
+        CLRB @#WORDBUF
+        RTS PC
+
+; FIND: dictionary search. R0 = cfa (0 if not found), R1 = flags byte.
+FIND:   MOV @#LATEST, R2
+FND1:   TST R2
+        BEQ FNDNO
+        MOVB 2(R2), R0
+        BIC #0o177400, R0
+        MOVB @#WORDBUF, R1
+        BIC #0o177400, R1
+        CMP R0, R1
+        BNE FNDNEXT
+        MOV R2, R3
+        ADD #4, R3                  ; header characters
+        MOV #WORDBUF+1, R1
+FNDC:   CMPB (R3)+, (R1)+
+        BNE FNDNEXT
+        DEC R0
+        BNE FNDC
+        MOV R2, R0                  ; match: cfa = head + 4 + len rounded up
+        ADD #4, R0
+        MOVB 2(R2), R1
+        BIC #0o177400, R1
+        INC R1
+        BIC #1, R1
+        ADD R1, R0
+        MOVB 3(R2), R1              ; flags
+        BIC #0o177400, R1
+        RTS PC
+FNDNEXT: MOV (R2), R2
+        BR FND1
+FNDNO:  CLR R0
+        RTS PC
+
+; NUMB: parse WORDBUF as decimal with optional leading '-'.
+; R0 = 1, R1 = value; or R0 = 0.
+NUMB:   CLR @#NFLG
+        MOVB @#WORDBUF, R2
+        BIC #0o177400, R2
+        BEQ NUMNO
+        MOV #WORDBUF+1, R3
+        CLR R1
+        MOVB (R3), R0
+        BIC #0o177400, R0
+        CMP R0, #0o55               ; '-'
+        BNE NUML
+        INC @#NFLG
+        DEC R2
+        BEQ NUMNO
+        INC R3
+NUML:   MOVB (R3)+, R0
+        BIC #0o177400, R0
+        SUB #0o60, R0
+        BMI NUMNO
+        CMP R0, #9.
+        BGT NUMNO
+        MOV R1, -(SP)               ; acc = acc*10 + digit
+        ASL (SP)
+        ASL R1
+        ASL R1
+        ASL R1
+        ADD (SP)+, R1
+        ADD R0, R1
+        DEC R2
+        BNE NUML
+        TST @#NFLG
+        BEQ NUMOK
+        NEG R1
+NUMOK:  MOV #1, R0
+        RTS PC
+NUMNO:  CLR R0
+        RTS PC
+
+; CC: compile the cell at 2(SP) at DP, popping it
+CC:     MOV 2(SP), R0               ; the cell to compile
+        MOV (SP)+, R1               ; return address -> R1
+        MOV R1, (SP)                ; store it over the cell; RTS consumes it
+        MOV @#DPPTR, R1
+        MOV R0, (R1)
+        ADD #2, @#DPPTR
+        RTS PC
+
+; CREATEHDR: build a header for WORDBUF with cfa at 2(SP), popping it
+CREATEHDR:
+        MOV 2(SP), R0               ; the cfa
+        MOV (SP)+, R1               ; return address -> R1
+        MOV R1, (SP)                ; store it over the cfa; RTS consumes it
+        MOV @#DPPTR, R1
+        MOV R1, @#SCRATCH+4         ; header address
+        MOV @#LATEST, (R1)+         ; link
+        MOVB @#WORDBUF, (R1)+       ; length
+        CLRB (R1)+                  ; flags
+        MOVB @#WORDBUF, R2
+        BIC #0o177400, R2
+        MOV #WORDBUF+1, R3
+CHD1:   MOVB (R3)+, (R1)+
+        DEC R2
+        BNE CHD1
+        BIT #1, R1
+        BEQ CHD2
+        CLRB (R1)+                  ; pad to even
+CHD2:   MOV R0, (R1)+               ; cfa
+        MOV R1, @#DPPTR
+        MOV @#SCRATCH+4, @#LATEST
+        RTS PC
+
+; ---- kernel cells -------------------------------------------------------------
+
+        .ORG 0o32120
+SCRATCH: .BLKW 3                    ; trampoline (2 cells) + header temp
+NFLG:    .BLKW 1
+ZFLG:    .BLKW 1
+DPPTR:   .BLKW 1
+LATEST:  .WORD LASTHD               ; patched by the assembler to the last header
+STATE:   .BLKW 1
+INPTR:   .BLKW 1
+CURROW:  .BLKW 1
+CURCOL:  .BLKW 1
+
+; ---- dictionary ----------------------------------------------------------------
+
+        .ORG DICT0
+
+        .HEAD "DUP", DUPC
+DUPC:   MOV (SP), -(SP)
+        JMP NEXT
+
+        .HEAD "DROP", DROPC
+DROPC:  TST (SP)+
+        JMP NEXT
+
+        .HEAD "SWAP", SWAPC
+SWAPC:  MOV (SP)+, R0
+        MOV (SP)+, R1
+        MOV R0, -(SP)
+        MOV R1, -(SP)
+        JMP NEXT
+
+        .HEAD "OVER", OVERC
+OVERC:  MOV 2(SP), -(SP)
+        JMP NEXT
+
+        .HEAD "ROT", ROTC
+ROTC:   MOV (SP)+, R0
+        MOV (SP)+, R1
+        MOV (SP)+, R2
+        MOV R1, -(SP)
+        MOV R0, -(SP)
+        MOV R2, -(SP)
+        JMP NEXT
+
+        .HEAD "+", PLUSC
+PLUSC:  MOV (SP)+, R0
+        ADD R0, (SP)
+        JMP NEXT
+
+        .HEAD "-", MINUSC
+MINUSC: MOV (SP)+, R0
+        NEG R0
+        ADD R0, (SP)
+        JMP NEXT
+
+        .HEAD "*", MULC
+MULC:   MOV (SP)+, R2
+        MOV (SP)+, R1
+        CLR R0
+        MOV #16., R3
+MUL1:   CLC
+        ROL R0
+        ROL R2
+        BCC MUL2
+        ADD R1, R0
+MUL2:   DEC R3
+        BNE MUL1
+        MOV R0, -(SP)
+        JMP NEXT
+
+        .HEAD "AND", ANDC
+ANDC:   MOV (SP)+, R0
+        COM R0
+        BIC R0, (SP)
+        JMP NEXT
+
+        .HEAD "OR", ORC
+ORC:    MOV (SP)+, R0
+        BIS R0, (SP)
+        JMP NEXT
+
+        .HEAD "@", FETCHC
+FETCHC: MOV (SP), R0
+        MOV (R0), (SP)
+        JMP NEXT
+
+        .HEAD "!", STOREC
+STOREC: MOV (SP)+, R0
+        MOV (SP)+, (R0)
+        JMP NEXT
+
+        .HEAD "C@", CFETCHC
+CFETCHC: MOV (SP), R0
+        MOVB (R0), (SP)
+        BIC #0o177400, (SP)
+        JMP NEXT
+
+        .HEAD "C!", CSTOREC
+CSTOREC: MOV (SP)+, R0
+        MOV (SP)+, R1
+        MOVB R1, (R0)
+        JMP NEXT
+
+        .HEAD ">R", TORC
+TORC:   MOV (SP)+, -(R5)
+        JMP NEXT
+
+        .HEAD "R>", RFROMC
+RFROMC: MOV (R5)+, -(SP)
+        JMP NEXT
+
+        .HEAD "I", IC
+IC:     MOV (R5), -(SP)
+        JMP NEXT
+
+        .HEAD "0=", ZEQC
+ZEQC:   TST (SP)
+        BEQ ZEQ1
+        CLR (SP)
+        JMP NEXT
+ZEQ1:   INC (SP)
+        JMP NEXT
+
+        .HEAD "1+", INCC
+INCC:   INC (SP)
+        JMP NEXT
+
+        .HEAD "1-", DECC
+DECC:   DEC (SP)
+        JMP NEXT
+
+        .HEAD "+!", PSTOREC
+PSTOREC: MOV (SP)+, R0
+        MOV (SP)+, R1
+        ADD R1, (R0)
+        JMP NEXT
+
+        .HEAD "HERE", HEREC
+HEREC:  MOV @#DPPTR, -(SP)
+        JMP NEXT
+
+        .HEAD "ALLOT", ALLOTC
+ALLOTC: ADD (SP)+, @#DPPTR
+        JMP NEXT
+
+        .HEAD ",", COMMAC
+COMMAC: JSR PC, CC
+        JMP NEXT
+
+        .HEAD "EMIT", EMITC
+EMITC:  MOV (SP)+, R0
+        JSR PC, EMIT
+        JMP NEXT
+
+        .HEAD "KEY", KEYC
+KEYC:   JSR PC, KEY
+        MOV R0, -(SP)
+        JMP NEXT
+
+        .HEAD "CR", CRC
+CRC:    JSR PC, DOCR
+        JMP NEXT
+
+        .HEAD ".", DOTC
+DOTC:   MOV (SP)+, R0
+        JSR PC, DOT
+        JMP NEXT
+
+        .HEAD ":", COLNC
+COLNC:  JSR PC, WORD                ; read the name into WORDBUF
+        MOV #DOCOL, -(SP)
+        JSR PC, CREATEHDR
+        MOV #1, @#STATE
+        JMP NEXT
+
+        .HEAD ";", SEMIC, 0o200
+SEMIC:  MOV #EXITCFA, -(SP)
+        JSR PC, CC
+        CLR @#STATE
+        JMP NEXT
+
+        .HEAD "VARIABLE", VARC
+VARC:   JSR PC, WORD                ; read the name into WORDBUF
+        MOV #DOVAR, -(SP)
+        JSR PC, CREATEHDR
+        CLR -(SP)
+        JSR PC, CC
+        JMP NEXT
+
+        .HEAD "CONSTANT", CONSC
+CONSC:  JSR PC, WORD                ; read the name into WORDBUF
+        MOV #DOCON, -(SP)
+        JSR PC, CREATEHDR
+        JSR PC, CC
+        JMP NEXT
+
+        .HEAD "CREATE", CREATEC
+CREATEC: JSR PC, WORD               ; read the name into WORDBUF
+        MOV #DOVAR, -(SP)
+        JSR PC, CREATEHDR
+        JMP NEXT
+
+        .HEAD "IMMEDIATE", IMMC
+IMMC:   MOV @#LATEST, R0
+        BISB #0o200, 3(R0)
+        JMP NEXT
+
+        .HEAD "LITERAL", LITW, 0o200
+LITW:   MOV #LITCFA, -(SP)
+        JSR PC, CC
+        JSR PC, CC
+        JMP NEXT
+
+        .HEAD "IF", IFW, 0o200
+IFW:    MOV #QBRCFA, -(SP)          ; IF is a zero-branch: jump if false
+        JSR PC, CC
+        MOV @#DPPTR, -(SP)          ; the offset cell, kept on the stack
+        CLR -(SP)
+        JSR PC, CC
+        JMP NEXT
+
+        .HEAD "ELSE", ELSEW, 0o200
+ELSEW:  MOV #BRCFA, -(SP)
+        JSR PC, CC
+        MOV @#DPPTR, -(SP)          ; this ELSE's offset cell
+        CLR -(SP)
+        JSR PC, CC
+        MOV 2(SP), R1               ; IF's cell, one below
+        MOV @#DPPTR, R2
+        SUB R1, R2
+        SUB #2, R2                  ; IP lands past IF's cell
+        MOV R2, (R1)                ; patch IF to branch here
+        JMP NEXT
+
+        .HEAD "THEN", THENW, 0o200
+THENW:  MOV (SP)+, R0
+        MOV @#DPPTR, R1
+        SUB R0, R1
+        SUB #2, R1                  ; IP lands past the offset cell
+        MOV R1, (R0)
+        JMP NEXT
+
+        .HEAD "BEGIN", BEGINW, 0o200
+BEGINW: MOV @#DPPTR, -(SP)
+        JMP NEXT
+
+        .HEAD "UNTIL", UNTILW, 0o200
+UNTILW: MOV #QBRCFA, -(SP)
+        JSR PC, CC
+        MOV @#DPPTR, R1
+        ADD #2, R1                  ; IP lands past the offset cell
+        MOV (SP)+, R0
+        SUB R1, R0
+        MOV R0, -(SP)
+        JSR PC, CC
+        JMP NEXT
+
+        .HEAD "WHILE", WHILEW, 0o200
+WHILEW: MOV #QBRCFA, -(SP)          ; branch out when the flag is false
+        JSR PC, CC
+        CLR -(SP)                   ; reserve the offset cell
+        JSR PC, CC
+        MOV @#DPPTR, R0             ; the placeholder's address (CC clobbers R0)
+        SUB #2, R0
+        MOV R0, -(SP)
+        JMP NEXT
+
+        .HEAD "REPEAT", REPEATW, 0o200
+REPEATW: MOV (SP)+, R0              ; WHILE's offset cell
+        MOV (SP)+, R1               ; BEGIN's address
+        MOV R0, -(SP)               ; WHILE's cell, patched below
+        MOV R1, -(SP)               ; BEGIN's address survives the CC
+        MOV #BRCFA, -(SP)
+        JSR PC, CC                  ; back-branch cell
+        MOV @#DPPTR, R2
+        ADD #2, R2                  ; IP lands past this offset cell
+        SUB R2, (SP)                ; branch back to BEGIN
+        JSR PC, CC                  ; back-branch offset
+        MOV @#DPPTR, R2             ; final DP = the exit target
+        MOV (SP)+, R0               ; WHILE's cell
+        SUB R0, R2
+        SUB #2, R2                  ; IP lands past WHILE's cell
+        MOV R2, (R0)                ; patch WHILE to here
+        JMP NEXT
+
+        .HEAD "DO", DOW, 0o200
+DOW:    MOV #DOCFA, -(SP)
+        JSR PC, CC
+        MOV @#DPPTR, -(SP)          ; loop body start
+        JMP NEXT
+
+        .HEAD "LOOP", LOOPW, 0o200
+LOOPW:  MOV #LOOPCFA, -(SP)
+        JSR PC, CC
+        MOV @#DPPTR, R1
+        ADD #2, R1                  ; IP lands past the offset cell
+        MOV (SP)+, R0
+        SUB R1, R0
+        MOV R0, -(SP)
+        JSR PC, CC
+        JMP NEXT
