@@ -905,6 +905,7 @@ dependencies = [
  "gt40",
  "kd11b",
  "png",
+ "rayon",
 ]
 
 [[package]]
