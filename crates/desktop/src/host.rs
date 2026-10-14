@@ -45,6 +45,8 @@ pub struct Link {
     pub mouse: Option<(f32, f32)>,
     /// Keyboard commands not yet acted on.
     pub keys: Vec<crate::keys::Command>,
+    /// Console characters from the keyboard, for programs that read them.
+    pub text: Vec<u8>,
     /// A turning key is held: direction (-1 left, 1 right) and whether fast.
     pub turning: Option<(i8, bool)>,
     pub paused: bool,
@@ -183,6 +185,13 @@ impl Host {
         l.bells += bus.bells.len() as u32;
         bus.bells.clear();
         l.t = bus.t;
+
+        // Console input: one character at a time into the keyboard
+        // buffer, with the done bit set, as the LK40 would have.
+        if !l.text.is_empty() && bus.console.tks & 0o200 == 0 {
+            bus.console.tkb = l.text.remove(0) as u16;
+            bus.console.tks |= 0o200;
+        }
 
         // The light pen: the autopilot's, the mouse, or the keyboard's.
         if let Some(p) = &mut self.pilot {
