@@ -1,12 +1,12 @@
 name: Release
 
-# Pushing a tag such as v1.0 builds the desktop program for macOS (one
-# app for Apple silicon and Intel), Windows and Linux, and attaches the
-# three to a GitHub release for that tag.
+# Publishing a release on GitHub builds the desktop program for macOS
+# (one app for Apple silicon and Intel), Windows and Linux, and attaches
+# the three to that release, with notes on opening them.
 
 on:
-  push:
-    tags: ["v*"]
+  release:
+    types: [published]
 
 permissions:
   contents: write
@@ -101,8 +101,8 @@ jobs:
       - uses: softprops/action-gh-release@v2
         with:
           files: dist/*
+          append_body: true
           body: |
-            Moonlander on a modelled GT40, ready to run.
 
             - **macOS** (Apple silicon and Intel): unzip and open Moonlander. The app is not signed, so macOS blocks it the first time: open System Settings, Privacy & Security, and choose "Open Anyway".
             - **Windows**: unzip and run `moonlander.exe`. If SmartScreen warns you, choose "More info", then "Run anyway".
