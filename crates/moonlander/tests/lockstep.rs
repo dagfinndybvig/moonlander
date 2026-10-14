@@ -228,10 +228,15 @@ fn landings_good_and_too_hard() {
 
 #[test]
 fn tipping_over() {
-    fly(Plan::Sliding { fps: -15 }, 240.0, &[SIDEM]);
-    fly(Plan::Tilted { degrees: 25 }, 240.0, &[ANGLEM]);
+    fly(Plan::Sliding { fps: -20 }, 240.0, &[SIDEM]);
+    fly(Plan::Tilted { degrees: -25 }, 240.0, &[ANGLEM]);
     fly(Plan::Bumpy, 270.0, &[BUMPYM]);
-    fly(Plan::LandAt { index: 582 }, 300.0, &[BUMPYM]);
+    fly(Plan::LandAt { index: 581 }, 300.0, &[BUMPYM]);
+}
+
+#[test]
+fn coming_down_on_a_rock() {
+    fly(Plan::LandAt { index: 583 }, 300.0, &[ROCKMS]);
 }
 
 #[test]

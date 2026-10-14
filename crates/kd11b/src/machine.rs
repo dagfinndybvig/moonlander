@@ -2,7 +2,7 @@
 //! the processor (core, VT11, line clock, host line, keyboard) is
 //! `gt40::terminal::Terminal`, shared with the translation.
 
-use crate::cpu::{Class, Outcome};
+use crate::cpu::Outcome;
 use crate::timing::Timing;
 pub use gt40::terminal::Fault;
 use gt40::terminal::{Terminal, PSW_ADDR};
@@ -42,7 +42,7 @@ impl Machine {
             psw: 0,
             halted: false,
             waiting: false,
-            timing: Timing::provisional(),
+            timing: Timing::dec(),
             instructions: 0,
             last_insn: 0,
             faults: Vec::new(),
@@ -168,35 +168,37 @@ impl Machine {
         }
         self.bus.refs = 0;
         let start = self.bus.t;
+        let pc = self.r[7];
         let result = self.execute();
-        // The instruction's own bus references; a trap's pushes and vector
-        // reads are part of the trap service time below.
-        let refs = self.bus.refs;
         self.instructions += 1;
-        let (outcome, class) = match result {
-            Ok(e) => (e.outcome, e.class),
+        // The time of the instruction, then of anything it set off: the
+        // trap sequence after a bus error. A trap instruction's own time
+        // includes its trap sequence, and RESET's its INIT.
+        let (outcome, time, extra) = match result {
+            Ok(e) => {
+                let t = self.timing.instruction(self.last_insn, e.taken, e.odd_src, e.odd_dst);
+                (e.outcome, t, 0.0)
+            }
             Err(Fault(a)) => {
                 self.faults.push(a);
-                (Outcome::Trap(0o4), Class::Trap)
+                // If the PC has not moved, the fetch itself failed.
+                let w = (self.r[7] != pc).then_some(self.last_insn);
+                let (own, trap) = self.timing.bus_error(w);
+                (Outcome::Trap(0o4), own, trap)
             }
         };
-        let mut extra = 0.0;
         match outcome {
             Outcome::Normal => {}
             Outcome::Halt => self.halted = true,
             Outcome::Wait => self.waiting = true,
-            Outcome::Reset => {
-                self.bus.unibus_init();
-                extra = self.timing.reset();
-            }
+            Outcome::Reset => self.bus.unibus_init(),
             Outcome::Trap(v) => {
                 if self.trap(v).is_err() {
                     self.halted = true;
                 }
-                extra = self.timing.interrupt();
             }
         }
-        self.bus.t = start + self.timing.instruction(class, refs) + extra;
+        self.bus.t = start + time + extra;
     }
 
     /// Run until machine time reaches `until` or the processor halts.

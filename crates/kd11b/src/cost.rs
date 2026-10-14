@@ -1,16 +1,14 @@
-//! Static instruction lengths and times, for code that stands in for
-//! PDP-11 instructions without executing them (the translation charges the
-//! time the original instructions would have taken).
+//! Instruction lengths and times for code that stands in for PDP-11
+//! instructions without executing them: the translation charges the time
+//! the original instructions would have taken, instruction by instruction,
+//! with the same values `Machine::step` uses.
 //!
-//! Times are not computed by a second copy of the timing rules: each
-//! instruction is executed once, in a sandbox machine where every address
-//! it can form is valid, and the same expression `Machine::step` uses is
-//! applied to what it did. Nothing about an 11/05 instruction's time depends
-//! on its data, only on its addressing modes, so one execution is enough.
+//! An instruction's time is fixed by its first word, except in two cases
+//! (see `timing`): a conditional branch takes longer if it branches, and a
+//! byte operand at an odd address takes longer. For those the translation
+//! is given every possible time and picks the one that happened.
 
-use crate::cpu::{Class, Outcome};
 use crate::timing::Timing;
-use crate::Machine;
 
 /// Extension words used by one operand specifier.
 fn ext(spec: u16) -> u16 {
@@ -44,48 +42,71 @@ pub fn length(w: u16) -> u16 {
     1
 }
 
-/// What an instruction costs: `instruction` is `Timing::instruction` for
-/// it, `extra` the RESET or trap time added after it. `Machine::step`
-/// computes `t = (t + instruction) + extra`; a translation reproducing its
-/// time exactly must add the two in that order.
+/// How the translation touches a byte instruction's destination: the reads
+/// and writes it makes, in order, which are what it can observe.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Access {
+    /// A register or an immediate: no memory access.
+    None,
+    /// Read only (CMPB, BITB, TSTB).
+    Read,
+    /// Written only (MOVB, CLRB).
+    Write,
+    /// Read, then written (the rest).
+    ReadWrite,
+}
+
+/// The time to charge for one instruction.
 #[derive(Clone, Copy, Debug, PartialEq)]
-pub struct Cost {
-    pub instruction: f64,
-    pub extra: f64,
+pub enum Step {
+    Time(f64),
+    /// A conditional branch: the time if it does not branch, and if it does.
+    Branch { not_taken: f64, taken: f64 },
+    /// A byte instruction with an operand in memory: the time for each
+    /// combination of an odd source address (bit 0) and an odd destination
+    /// address (bit 1); whether the source is in memory, and how the
+    /// destination is touched.
+    Byte { times: [f64; 4], src: bool, dst: Access },
 }
 
-/// The cost of the instruction in `words` (first word, then any extension
-/// words), when it completes without a bus error.
-pub fn cost(timing: &Timing, words: &[u16]) -> Cost {
-    // 28K words: every address below the I/O page exists. Registers and
-    // memory hold 040000, so register, deferred, autoincrement,
-    // autodecrement and indexed operands all land in core.
-    let mut m = Machine::new(0o70000, 60.0);
-    m.timing = timing.clone();
-    m.bus.mem.iter_mut().for_each(|w| *w = 0o40000);
-    let pc: u16 = 0o100000;
-    for (i, &w) in words.iter().enumerate() {
-        m.bus.mem[(pc >> 1) as usize + i] = w;
+/// An operand specifier that addresses memory (not a register, and not an
+/// immediate in the instruction stream).
+fn in_memory(spec: u16) -> bool {
+    let (mode, reg) = ((spec >> 3) & 7, spec & 7);
+    mode != 0 && !(mode == 2 && reg == 7)
+}
+
+/// The time to charge for the instruction whose first word is `w`.
+pub fn step(timing: &Timing, w: u16) -> Step {
+    let t = |taken, s, d| timing.instruction(w, taken, s, d);
+    let hb = w >> 8;
+    if matches!(hb, 0o002..=0o007 | 0o200..=0o207) {
+        return Step::Branch { not_taken: t(false, false, false), taken: t(true, false, false) };
     }
-    m.bus.rehash();
-    m.r = [0o40000; 8];
-    m.r[7] = pc;
-    m.psw = 0o340;
-    m.bus.refs = 0;
-    let e = m.execute().expect("sandbox instruction faulted");
-    let instruction = timing.instruction(e.class, m.bus.refs);
-    let extra = match e.outcome {
-        Outcome::Reset => timing.reset(),
-        Outcome::Trap(_) => timing.interrupt(),
-        _ => 0.0,
+    let top = w >> 12;
+    let sop = (w >> 6) & 0o777;
+    let (src, dst) = if matches!(top, 0o11..=0o15) {
+        let dst = match top {
+            0o11 => Access::Write,
+            0o12 | 0o13 => Access::Read,
+            _ => Access::ReadWrite,
+        };
+        (in_memory(w >> 6), if in_memory(w) { dst } else { Access::None })
+    } else if w & 0o100000 != 0 && (0o050..=0o063).contains(&sop) {
+        let dst = match sop {
+            0o050 => Access::Write,
+            0o057 => Access::Read,
+            _ => Access::ReadWrite,
+        };
+        (false, if in_memory(w) { dst } else { Access::None })
+    } else {
+        (false, Access::None)
     };
-    Cost { instruction, extra }
-}
-
-/// The cost of an instruction that takes a bus error after `refs` bus
-/// references: `Machine::step` charges it as a trap.
-pub fn faulted(timing: &Timing, refs: u32) -> Cost {
-    Cost { instruction: timing.instruction(Class::Trap, refs), extra: timing.interrupt() }
+    if !src && dst == Access::None {
+        return Step::Time(t(false, false, false));
+    }
+    let times = [t(false, false, false), t(false, true, false), t(false, false, true), t(false, true, true)];
+    Step::Byte { times, src, dst }
 }
 
 #[cfg(test)]
@@ -108,13 +129,27 @@ mod tests {
     }
 
     #[test]
-    fn costs_follow_refs() {
-        let t = Timing::provisional();
-        let reg = cost(&t, &[0o010001]); // MOV R0,R1: fetch only
-        assert_eq!(reg.instruction, t.instruction(Class::DoubleOperand, 1));
-        let abs = cost(&t, &[0o013737, 0o1000, 0o1002]); // MOV @#a,@#b: 1+1+1+1+1
-        assert_eq!(abs.instruction, t.instruction(Class::DoubleOperand, 5));
-        let reset = cost(&t, &[0o000005]);
-        assert_eq!(reset.extra, t.reset());
+    fn steps() {
+        let d = Timing::dec();
+        assert_eq!(step(&d, 0o010001), Step::Time(3.1));
+        assert_eq!(step(&d, 0o000403), Step::Time(2.5)); // BR always branches
+        assert_eq!(step(&d, 0o001003), Step::Branch { not_taken: 1.9, taken: 2.5 });
+        // MOVB (R5)+,(R2)+ reads a byte and writes one.
+        match step(&d, 0o112522) {
+            Step::Byte { src: true, dst: Access::Write, .. } => {}
+            s => panic!("{s:?}"),
+        }
+        // CMPB (R3),#'0: the destination is an immediate.
+        match step(&d, 0o121327) {
+            Step::Byte { src: true, dst: Access::None, .. } => {}
+            s => panic!("{s:?}"),
+        }
+        // INCB -1(R1): read, then written.
+        match step(&d, 0o105261) {
+            Step::Byte { src: false, dst: Access::ReadWrite, times } => assert_eq!(times[2], 9.2),
+            s => panic!("{s:?}"),
+        }
+        // MOVB R1,R2: no memory operand at all.
+        assert_eq!(step(&d, 0o110102), Step::Time(3.1));
     }
 }

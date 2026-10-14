@@ -31,9 +31,40 @@ pub struct Block {
     /// Number of instructions.
     pub n: u8,
     pub name: &'static str,
-    /// Times to add, in order: each instruction's time, and after RESET the
-    /// bus reset time.
-    pub cost: &'static [f64],
+    /// The time of each instruction, in order.
+    pub cost: &'static [Step],
+}
+
+/// How the translation touches a byte instruction's destination: the byte
+/// reads and writes it makes for it, in order.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Access {
+    /// A register or an immediate: none.
+    None,
+    /// Read (CMPB, BITB, TSTB).
+    Read,
+    /// Written (MOVB, CLRB).
+    Write,
+    /// Read, then written.
+    ReadWrite,
+}
+
+/// The time to charge for one instruction of the original, in microseconds.
+/// Most instructions take a time fixed by the instruction; two kinds take
+/// one of several, and the translation charges the one that happened.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub enum Step {
+    /// A fixed time.
+    T(f64),
+    /// A conditional branch: the time if it does not branch, and if it does.
+    /// It ends its block; the block that runs next says which it was.
+    B(f64, f64),
+    /// A byte instruction with an operand in memory: the time for each
+    /// combination of an odd source address (bit 0 of the index) and an odd
+    /// destination address (bit 1); whether the source is in memory; and
+    /// how the destination is touched. The byte reads and writes the
+    /// translation makes, logged as it makes them, give the addresses.
+    Y([f64; 4], bool, Access),
 }
 
 /// Ways control leaves the translated routines other than by returning.
@@ -87,7 +118,11 @@ pub struct Moonlander {
     /// End of the block being executed: where a WAIT in it resumes.
     block_end: u16,
     /// Time of the current block, charged when the next one starts.
-    pending: &'static [f64],
+    pending: &'static [Step],
+    /// Name of the current block, for diagnostics.
+    pending_name: &'static str,
+    /// Byte reads and writes made in the current block: (address, write).
+    bytes: Vec<(u16, bool)>,
     /// A bus error not yet acted on (the block in which it happened runs to
     /// its end; the next block start stops the run).
     fault: Option<u16>,
@@ -124,6 +159,8 @@ impl Moonlander {
             pc: img.start.unwrap_or(0),
             block_end: 0,
             pending: &[],
+            pending_name: "",
+            bytes: Vec::new(),
             fault: None,
             limit: f64::INFINITY,
             observer: None,
@@ -178,6 +215,7 @@ impl Moonlander {
 
     /// Read a byte.
     pub fn b(&mut self, a: u16) -> u8 {
+        self.bytes.push((a, false));
         let w = self.w(a & !1);
         if a & 1 != 0 {
             (w >> 8) as u8
@@ -193,6 +231,7 @@ impl Moonlander {
 
     /// Write a byte.
     pub fn setb(&mut self, a: u16, v: u8) {
+        self.bytes.push((a, true));
         if self.fault.is_some() {
             return;
         }
@@ -219,12 +258,53 @@ impl Moonlander {
     /// Charge the time of the block in progress, as if it had just ended.
     /// For hosts and tests that stop the translation between blocks.
     pub fn finish(&mut self) {
-        self.charge();
+        self.charge(None);
     }
 
-    fn charge(&mut self) {
-        for &c in self.pending {
-            self.bus.t += c;
+    /// Charge the time of the block that has just run, instruction by
+    /// instruction. `next` is the block that runs next, if known: it says
+    /// whether a branch at the end was taken.
+    fn charge(&mut self, next: Option<u16>) {
+        let mut bytes = std::mem::take(&mut self.bytes).into_iter();
+        let name = self.pending_name;
+        let mut byte = |write: bool| -> u16 {
+            match bytes.next() {
+                Some((a, w)) if w == write => a,
+                other => panic!("{name}: the translation's byte accesses do not match the original's ({other:?})"),
+            }
+        };
+        for &step in self.pending {
+            self.bus.t += match step {
+                Step::T(t) => t,
+                Step::B(not_taken, taken) => match next {
+                    Some(a) if a == self.block_end => not_taken,
+                    Some(_) => taken,
+                    None => panic!("{name}: a branch was charged without knowing where it went"),
+                },
+                Step::Y(times, src, dst) => {
+                    let mut odd = 0;
+                    if src && byte(false) & 1 != 0 {
+                        odd |= 1;
+                    }
+                    let d = match dst {
+                        Access::None => None,
+                        Access::Read => Some(byte(false)),
+                        Access::Write => Some(byte(true)),
+                        Access::ReadWrite => {
+                            let a = byte(false);
+                            assert_eq!(byte(true), a, "{name}: a byte read and written back at different addresses");
+                            Some(a)
+                        }
+                    };
+                    if d.is_some_and(|a| a & 1 != 0) {
+                        odd |= 2;
+                    }
+                    times[odd]
+                }
+            };
+        }
+        if let Some(extra) = bytes.next() {
+            panic!("{name}: a byte access the original does not make ({extra:?})");
         }
         self.pending = &[];
     }
@@ -247,7 +327,7 @@ impl Moonlander {
     /// Start of block `b`: charge the previous block, take interrupts that
     /// are due, report, and go on.
     pub fn at(&mut self, b: Block) -> Flow {
-        self.charge();
+        self.charge(Some(b.addr));
         if let Some(a) = self.fault {
             return Err(Escape::BusError(a));
         }
@@ -270,6 +350,7 @@ impl Moonlander {
         }
         self.pace()?;
         self.pending = b.cost;
+        self.pending_name = b.name;
         self.block_end = b.end;
         Ok(())
     }
@@ -299,7 +380,7 @@ impl Moonlander {
         self.bus.t += blocks::INTERRUPT;
         self.dispatch(handler)?;
         // RTI, whose time is in the handler's last block.
-        self.charge();
+        self.charge(None);
         let pc = self.pop();
         let psw = self.pop();
         self.psw = psw & 0o357;
@@ -313,7 +394,7 @@ impl Moonlander {
     /// WAIT: sleep until an interrupt, take it, and go on. The WAIT
     /// instruction's own time is in the current block.
     pub fn wait(&mut self) -> Flow {
-        self.charge();
+        self.charge(None);
         // An interrupt ends the WAIT; the PC stacked is the instruction
         // after it, which starts the next block.
         self.pc = self.block_end;
@@ -369,6 +450,7 @@ impl Moonlander {
     /// Returns the address the vector holds.
     pub fn bus_error_trap(&mut self, cost: &'static [f64], stacked_pc: u16) -> u16 {
         self.pending = &[];
+        self.bytes.clear();
         for &c in cost {
             self.bus.t += c;
         }

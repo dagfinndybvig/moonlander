@@ -11,7 +11,7 @@ This repository brings back the build that survives as a binary, the one that gr
 
 ![A perfect landing beside the McDonald's, on the modelled phosphor](docs/images/phosphor-mcdonalds-landing.png)
 
-*The translation, flown by the autopilot and drawn by the models of the VT11 and its P39 phosphor. Across the top, four readouts; on the right, the throttle bar at 17%, the turning arrows, and the twelve things a readout can show. The astronaut is on his way to the McDonald's.*
+*The translation, flown by the autopilot and drawn by the models of the VT11 and its P39 phosphor. Across the top, four readouts; on the right, the throttle bar at 17%, the turning arrows, and the twelve things a readout can show. The astronaut is walking past the arches to the counter.*
 
 The [journal](journal/) records how each part was done, what was checked and how, and what the program turned out to do that its comments don't say. It is the main document here; the rest of this page is a map.
 
@@ -73,7 +73,7 @@ The default view models the GT40's VR14 monitor and its P39 phosphor, a long-per
 | [`reconstruction/`](reconstruction/) | The reconstructed source of the Mare Assabet build, which assembles to the surviving binary exactly. |
 | [`oracle/`](oracle/) | Tools used to establish ground truth: the 1973 build, the alignment of the two builds, and a processor test against simh. |
 | [`crates/gt40`](crates/gt40/) | The terminal: VT11 display processor, character generator, core, line clock, host line, the CRT model. |
-| [`crates/kd11b`](crates/kd11b/) | The PDP-11/05 processor (KD11-B), and the instruction timing model. |
+| [`crates/kd11b`](crates/kd11b/) | The PDP-11/05 processor (KD11-B), with instruction times from DEC's PDP-11/05 manual. |
 | [`crates/moonlander`](crates/moonlander/) | The translation, its generated tables, the autopilot, and the tests that compare it with the original. |
 | [`crates/desktop`](crates/desktop/) | The program you run. |
 
@@ -88,6 +88,7 @@ The default view models the GT40's VR14 monitor and its P39 phosphor, a long-per
 7. [The ship's weight is an address](journal/007-the-weight-is-an-address.md): reading the program before translating it, and why the translation keeps the original memory.
 8. [The translation, and checking it against the original](journal/008-the-translation-and-its-proof.md): how it was translated, how it was checked, and what it found.
 9. [The terminal on a modern screen](journal/009-the-terminal-on-a-modern-screen.md): running in real time, the phosphor model, the light pen on a mouse, and the keyboard through the pen.
+10. [DEC's timings](journal/010-decs-timings.md): the processor's instruction times from the PDP-11/05 manual, what the translation needed to charge them exactly, and what they change in the game.
 
 ## Checking it yourself
 

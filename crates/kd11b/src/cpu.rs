@@ -34,7 +34,7 @@ pub enum Outcome {
     Trap(u16),
 }
 
-/// Instruction classes for the timing model.
+/// Instruction groups, as the manual divides the instruction set.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Class {
     DoubleOperand,
@@ -52,6 +52,23 @@ pub enum Class {
 pub struct Executed {
     pub outcome: Outcome,
     pub class: Class,
+    /// A branch that branched.
+    pub taken: bool,
+    /// A byte instruction whose source, or destination, is at an odd
+    /// address (the KD11-B takes longer over those).
+    pub odd_src: bool,
+    pub odd_dst: bool,
+}
+
+impl Executed {
+    fn new(outcome: Outcome, class: Class) -> Executed {
+        Executed { outcome, class, taken: false, odd_src: false, odd_dst: false }
+    }
+}
+
+/// A byte operand at an odd address in memory.
+fn odd(l: Loc, byte: bool) -> bool {
+    matches!(l, Loc::Mem(a) if byte && a & 1 != 0)
 }
 
 impl Machine {
@@ -174,7 +191,7 @@ impl Machine {
     pub(crate) fn execute(&mut self) -> Result<Executed, Fault> {
         let w = self.fetch()?;
         self.last_insn = w;
-        let ok = |class| Ok(Executed { outcome: Outcome::Normal, class });
+        let ok = |class| Ok(Executed::new(Outcome::Normal, class));
         let byte = w & 0o100000 != 0;
         let mask: u16 = if byte { 0xFF } else { 0xFFFF };
         let sign: u16 = if byte { 0x80 } else { 0x8000 };
@@ -190,6 +207,7 @@ impl Machine {
             let sl = self.ea(src_spec, is_byte)?;
             let s = if is_byte { self.get_b(sl)? as u16 } else { self.get_w(sl)? };
             let dl = self.ea(dst_spec, is_byte)?;
+            let (odd_src, odd_dst) = (odd(sl, is_byte), odd(dl, is_byte));
             match opcode & 0o7 {
                 1 => {
                     // MOV, MOVB (MOVB to a register sign-extends)
@@ -247,7 +265,7 @@ impl Machine {
                     self.set_flag(C, c);
                 }
             }
-            return ok(Class::DoubleOperand);
+            return Ok(Executed { odd_src, odd_dst, ..Executed::new(Outcome::Normal, Class::DoubleOperand) });
         }
 
         // Branches: high byte 001-007 and 200-207.
@@ -275,12 +293,12 @@ impl Machine {
                 let off = (w & 0o377) as u8 as i8 as i16;
                 self.r[PC] = self.r[PC].wrapping_add((off * 2) as u16);
             }
-            return ok(Class::Branch);
+            return Ok(Executed { taken: take, ..Executed::new(Outcome::Normal, Class::Branch) });
         }
 
         match w {
-            0o000000 => return Ok(Executed { outcome: Outcome::Halt, class: Class::Misc }),
-            0o000001 => return Ok(Executed { outcome: Outcome::Wait, class: Class::Misc }),
+            0o000000 => return Ok(Executed::new(Outcome::Halt, Class::Misc)),
+            0o000001 => return Ok(Executed::new(Outcome::Wait, Class::Misc)),
             0o000002 => {
                 self.r[PC] = self.pop()?;
                 let at = self.r[SP];
@@ -288,16 +306,16 @@ impl Machine {
                 self.psw = self.unstack_psw(at, psw);
                 return ok(Class::Rti);
             }
-            0o000003 => return Ok(Executed { outcome: Outcome::Trap(0o14), class: Class::Trap }),
-            0o000004 => return Ok(Executed { outcome: Outcome::Trap(0o20), class: Class::Trap }),
-            0o000005 => return Ok(Executed { outcome: Outcome::Reset, class: Class::Misc }),
+            0o000003 => return Ok(Executed::new(Outcome::Trap(0o14), Class::Trap)),
+            0o000004 => return Ok(Executed::new(Outcome::Trap(0o20), Class::Trap)),
+            0o000005 => return Ok(Executed::new(Outcome::Reset, Class::Misc)),
             _ => {}
         }
 
         if (0o000100..=0o000177).contains(&w) {
             // JMP; register mode is illegal and traps to 4.
             if w & 0o70 == 0 {
-                return Ok(Executed { outcome: Outcome::Trap(0o4), class: Class::Jump });
+                return Ok(Executed::new(Outcome::Trap(0o4), Class::Jump));
             }
             if let Loc::Mem(a) = self.ea(w & 0o77, false)? {
                 self.r[PC] = a;
@@ -333,7 +351,7 @@ impl Machine {
         if (0o004000..=0o004777).contains(&w) {
             // JSR; register-mode destination traps to 4.
             if w & 0o70 == 0 {
-                return Ok(Executed { outcome: Outcome::Trap(0o4), class: Class::Jsr });
+                return Ok(Executed::new(Outcome::Trap(0o4), Class::Jsr));
             }
             let reg = ((w >> 6) & 7) as usize;
             if let Loc::Mem(a) = self.ea(w & 0o77, false)? {
@@ -345,16 +363,17 @@ impl Machine {
             return ok(Class::Jsr);
         }
         if (0o104000..=0o104377).contains(&w) {
-            return Ok(Executed { outcome: Outcome::Trap(0o30), class: Class::Trap });
+            return Ok(Executed::new(Outcome::Trap(0o30), Class::Trap));
         }
         if (0o104400..=0o104777).contains(&w) {
-            return Ok(Executed { outcome: Outcome::Trap(0o34), class: Class::Trap });
+            return Ok(Executed::new(Outcome::Trap(0o34), Class::Trap));
         }
 
         // Single operand group: 0050DD-0063DD and byte forms 1050DD-1063DD.
         let sop = (w >> 6) & 0o777;
         if (0o050..=0o063).contains(&sop) {
             let l = self.ea(w & 0o77, byte)?;
+            let done = Ok(Executed { odd_dst: odd(l, byte), ..Executed::new(Outcome::Normal, Class::SingleOperand) });
             let d = if byte { self.get_b(l)? as u16 } else { self.get_w(l)? };
             let c_in = self.flag(C);
             let r = match sop {
@@ -407,7 +426,7 @@ impl Machine {
                     self.set_nz(d, byte);
                     self.set_flag(V, false);
                     self.set_flag(C, false);
-                    return ok(Class::SingleOperand);
+                    return done;
                 }
                 0o060 | 0o061 | 0o062 | 0o063 => {
                     let (r, c_out) = match sop {
@@ -429,11 +448,11 @@ impl Machine {
             } else {
                 self.put_w(l, r)?;
             }
-            return ok(Class::SingleOperand);
+            return done;
         }
 
         // Everything else is reserved on the KD11-B: RTT, SPL, MARK, MFPI,
         // MTPI, SXT, MUL, DIV, ASH, ASHC, XOR, FIS, SOB, MTPS, MFPS, FPP.
-        Ok(Executed { outcome: Outcome::Trap(0o10), class: Class::Trap })
+        Ok(Executed::new(Outcome::Trap(0o10), Class::Trap))
     }
 }

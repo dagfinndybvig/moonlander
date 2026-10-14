@@ -33,9 +33,9 @@ fn main() {
     ];
     for (p, s) in [
         (Plan::McDonalds, 420.0), (Plan::Flag, 270.0), (Plan::Hard { fps: 10 }, 240.0), (Plan::Hard { fps: 20 }, 240.0),
-        (Plan::Hard { fps: 40 }, 240.0), (Plan::Brake, 360.0), (Plan::Sliding { fps: -15 }, 240.0),
-        (Plan::LandAt { index: 582 }, 300.0), (Plan::LowDrift { fps: 30, alt: 300 }, 320.0),
-        (Plan::Tilted { degrees: 25 }, 240.0), (Plan::Bumpy, 270.0), (Plan::IntoMcDonalds, 240.0), (Plan::Climb, 280.0),
+        (Plan::Hard { fps: 40 }, 240.0), (Plan::Brake, 360.0), (Plan::Sliding { fps: -20 }, 240.0),
+        (Plan::LandAt { index: 581 }, 300.0), (Plan::LandAt { index: 583 }, 300.0), (Plan::LowDrift { fps: 30, alt: 300 }, 320.0),
+        (Plan::Tilted { degrees: -25 }, 240.0), (Plan::Bumpy, 270.0), (Plan::IntoMcDonalds, 240.0), (Plan::Climb, 280.0),
         (Plan::Drift { fps: -150 }, 260.0), (Plan::Drift { fps: 150 }, 200.0), (Plan::Readout { item: 4, slot: 1 }, 220.0),
         (Plan::Spin, 280.0), (Plan::LowDrift { fps: -30, alt: 300 }, 300.0),
     ] {
