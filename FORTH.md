@@ -34,7 +34,7 @@ For testing without a window, `forthtest` boots the image headlessly, types line
 
 ```
 cargo build --release --example forthtest -p kd11b
-./target/release/examples/forthtest.exe forth.lda out.png "1 2 + .,: SQ * ;,5 DUP SQ ."
+./target/release/examples/forthtest.exe forth.lda out.png "1 2 + .,: SQ DUP * ;,5 SQ ."
 ```
 
 ## A first session
@@ -43,12 +43,12 @@ cargo build --release --example forthtest -p kd11b
 GT40 FORTH
 1 2 + .
 3 
-: SQ * ;
-5 DUP SQ .
+: SQ DUP * ;
+5 SQ .
 25 
 ```
 
-Everything on the stack. `1 2 +` pushes 1, pushes 2, adds; `.` prints and drops. A colon definition compiles the words between `:` and `;` into a new dictionary entry — here `SQ`, which multiplies the top two numbers — and from then on `SQ` is a word like any other. There is nothing else to learn about defining words, because that is all a definition is.
+Everything on the stack. `1 2 +` pushes 1, pushes 2, adds; `.` prints and drops. A colon definition compiles the words between `:` and `;` into a new dictionary entry — here `SQ`, which squares the number on top of the stack — and from then on `SQ` is a word like any other. There is nothing else to learn about defining words, because that is all a definition is.
 
 Numbers are 16-bit signed integers, printed in decimal. There is no floating point and no division word; Moonlander did not need one and neither, for a demonstration, do we.
 
@@ -134,7 +134,7 @@ Memory, in octal:
 | `33000` | return stack, growing down |
 | `34000` | data stack, growing down |
 
-Everything above `34000` is stack headroom, and the dictionary can grow for another 20K words before anything collides — though on a real GT40 there was only 8K words in total, and this map is sized to it: the kernel, the screen, the buffers, the stacks, and room left over for your definitions, all inside the same 8K that Moonlander flew in.
+Everything above `34000` is stack headroom, and the dictionary can grow for another 4K words before anything collides — though on a real GT40 there was only 8K words in total, and this map is sized to it: the kernel, the screen, the buffers, the stacks, and room left over for your definitions, all inside the same 8K that Moonlander flew in.
 
 ## What it is not
 
