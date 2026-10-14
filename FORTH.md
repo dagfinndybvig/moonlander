@@ -1,4 +1,4 @@
-<img width="1018" height="175" alt="image" src="https://github.com/user-attachments/assets/056a5487-ec29-4543-931e-8188af6fb5df" />
+<img width="1021" height="260" alt="image" src="https://github.com/user-attachments/assets/c3bc99ca-2483-40c4-a727-fe26f6103edb" />
 
 # FORTH on the GT40
 
