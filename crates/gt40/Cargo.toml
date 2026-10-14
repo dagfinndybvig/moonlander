@@ -5,6 +5,7 @@ edition.workspace = true
 version.workspace = true
 
 [dependencies]
+rayon = "1"
 
 [dev-dependencies]
 png = "0.17"

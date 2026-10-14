@@ -3,6 +3,7 @@
 //! and the terminal around them (core, line clock, host line, keyboard).
 
 pub mod chargen;
+pub mod crt;
 pub mod lda;
 pub mod raster;
 pub mod terminal;
