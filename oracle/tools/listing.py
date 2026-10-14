@@ -41,6 +41,7 @@ def parse(path, base=0):
     lines = []
     labels = {}
     constants = {}
+    symtab_rel = {}     # relocatable symbols from the assembler's own table
     text = open(path, encoding="latin-1").read().split("\n")
     in_symtab = False
     scope = None
@@ -57,6 +58,10 @@ def parse(path, base=0):
                 m = re.match(r"(\S+)\s*=\s*%?([0-7]{6})", chunk)
                 if m:
                     constants[m.group(1)] = int(m.group(2), 8)
+                    continue
+                m = re.match(r"(\S+)\s+([0-7]{6})R", chunk)
+                if m and "$" not in m.group(1) and m.group(1) != ".":
+                    symtab_rel[m.group(1)] = int(m.group(2), 8) + base
             continue
         if len(raw) < 9:
             continue
@@ -85,14 +90,19 @@ def parse(path, base=0):
                 scope = lab
             # a label on a line with no output takes the next location
             labels[lab] = ln
-    # resolve label addresses: a label line without a location gets the
-    # address of the next line that has one
+    # Global labels take their value from the assembler's symbol table, which
+    # is authoritative (a label alone on a line before a storage reservation
+    # cannot be located from emitted code). Local labels have no table entry;
+    # they take the address of their own line, or of the next emitting line.
     resolved = {}
     for name, ln in labels.items():
-        if ln.addr is not None:
+        if name in symtab_rel:
+            resolved[name] = symtab_rel[name]
+        elif ln.addr is not None:
             resolved[name] = ln.addr
         else:
             i = lines.index(ln)
-            nxt = next((l.addr for l in lines[i:] if l.addr is not None), None)
-            resolved[name] = nxt
+            resolved[name] = next((l.addr for l in lines[i:] if l.addr is not None), None)
+    for name, v in symtab_rel.items():
+        resolved.setdefault(name, v)
     return lines, resolved, constants

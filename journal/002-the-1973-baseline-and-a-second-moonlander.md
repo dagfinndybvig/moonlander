@@ -61,7 +61,7 @@ Start address 032340. Unlike the 1973 build it loads from address 0, carries its
 A diff of the printable text in both images shows what changed on screen:
 
 - The greeting is new. It reads, in part: "BECAUSE OF CHANGES IN THE NATIONAL POLICY, THE LUNAR EXPLORATORY PROGRAM IS ONCE AGAIN FUNCTIONING", sends the pilot to "Mare Assabet" (rendered in lower case, which the VT11 character generator supports through shift codes), and explains that "THE SPACE AGENCY CHOSE TO USE AN INFERIOR BRAND OF MINICOMPUTER IN THE LUNAR LANDER". Mare Assabet is a joke: the Assabet River runs past DEC's mill in Maynard. This is the version people remember.
-- The crash message gained a typo: 1973 "NO SURVIVORS", later "NO SURVIRORS".
+- The crash message differs by one letter: our reference listing reads "NO SURVIVORS", the binary "NO SURVIRORS". (Corrected in entry 003: every other copy of the source has "SURVIRORS"; the typo is original and our reference copy is the one that was edited.)
 - The greeting has its own typo: "YOU MISSION".
 - All other message strings are unchanged in content; their surroundings differ because the code moved.
 
