@@ -37,6 +37,8 @@ The reason the refresh can be uneven is in the program. The display file calls i
 
 The clean view now shows each beam at full strength for 20 ms and fades it out by 70 ms. Parts redrawn less often show slightly dimmer, as they do on the phosphor.
 
+The first screenshot from a Mac showed a fault the Linux tests had not: faint rings centred on the face. The faceplate is lit very dimly, a little brighter at the centre, and in 8 bits that slope crosses only three or four output levels, so it came out as bands, each a different tint because the three colour channels step at different radii. The output is now dithered with a fixed pattern of noise of at most one level either way, the same on all three channels, and the rings are gone even with the contrast raised 25 times.
+
 ## The light pen
 
 The mouse is the pen: while the button is down, the pen is on the face under the cursor, and the VT11 model sees whatever the beam draws within its field of view. The field of view, 5 raster units in radius, is the one the autopilot uses; like the pen's recovery time, it is modelled from the manual, not measured. A faint ring shows where the pen is.
@@ -63,4 +65,4 @@ The GT40 manual: "If an attempt is made to write to address 172002, the effect i
 
 - **The phosphor.** Only the spot size comes from a document. The persistence is an assumption, and the rest is judged by eye.
 - **The pen.** How many hits a held pen produces, and so how quickly the controls respond, is a property of the modelled pen.
-- **The host.** The window draws at 60 frames a second without waiting for the display's vertical blank. The front end was tested on Linux, under a virtual X display, by sending it keys and mouse movements and photographing the screen; the libraries it uses (winit, softbuffer, cpal) also support macOS and Windows, where it has not been run yet.
+- **The host.** The window draws at 60 frames a second without waiting for the display's vertical blank. The front end was tested on Linux, under a virtual X display, by sending it keys and mouse movements and photographing the screen, and has since run on a Mac with a high-density display. It has not been run on Windows.

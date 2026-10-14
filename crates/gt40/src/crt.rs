@@ -308,7 +308,7 @@ impl Crt {
                 let red = face * 0.8 + b * 0.36 + hot * 0.6;
                 let green = face * 1.0 + b * 1.00 + hot * 0.0;
                 let blue = face * 0.85 + b * 0.30 + hot * 0.55;
-                row[x] = pack(red, green, blue);
+                row[x] = pack_dithered(red, green, blue, x as u32, y as u32);
             }
         });
     }
@@ -375,5 +375,26 @@ pub fn render_clean(crt: &Crt, beams: &[Beam], out: &mut [u32]) {
 
 pub fn pack(r: f32, g: f32, b: f32) -> u32 {
     let c = |v: f32| (v.clamp(0.0, 1.0).powf(1.0 / 2.2) * 255.0 + 0.5) as u32;
+    (c(r) << 16) | (c(g) << 8) | c(b)
+}
+
+/// As `pack`, with a fixed pattern of noise of up to one step of the 8-bit
+/// output added before rounding. The faceplate and the glow are very dark,
+/// slowly varying levels; rounded plainly they come out as visible rings,
+/// a step of one level each. Dithered, the steps disappear.
+pub fn pack_dithered(r: f32, g: f32, b: f32, x: u32, y: u32) -> u32 {
+    let hash = |k: u32| {
+        let mut h = x.wrapping_mul(0x9E37_79B1) ^ y.wrapping_mul(0x85EB_CA77) ^ k;
+        h ^= h >> 15;
+        h = h.wrapping_mul(0x2C1B_3C6D);
+        h ^= h >> 12;
+        h = h.wrapping_mul(0x297A_2D39);
+        h ^= h >> 15;
+        h as f32 / u32::MAX as f32
+    };
+    // Triangular noise from -1 to 1 step, the same on all three channels
+    // so it adds no colour.
+    let n = hash(0x51ED_270B) + hash(0xA5A5_1234) - 1.0;
+    let c = |v: f32| (v.clamp(0.0, 1.0).powf(1.0 / 2.2) * 255.0 + 0.5 + n).clamp(0.0, 255.0) as u32;
     (c(r) << 16) | (c(g) << 8) | c(b)
 }
