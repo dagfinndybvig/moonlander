@@ -33,6 +33,8 @@ pub struct Config {
     pub line_hz: f64,
     /// Fly by the autopilot instead of the player's pen.
     pub demo: Option<Plan>,
+    /// Run this .lda image instead of the game's own.
+    pub image: Option<std::path::PathBuf>,
 }
 
 /// What the window and the machine thread share.
@@ -130,7 +132,11 @@ fn run_translation(cfg: &Config, host: Arc<Mutex<Host>>) -> (Option<String>, Ter
 /// interrupts between any two instructions, as the real one did.
 fn run_original(cfg: &Config, host: Arc<Mutex<Host>>) -> (Option<String>, Terminal) {
     let mut m = kd11b::machine::Machine::new(0o20000, cfg.line_hz);
-    let img = gt40::lda::parse(moonlander::IMAGE).expect("memory image");
+    let bytes = match &cfg.image {
+        Some(path) => std::fs::read(path).expect("cannot read the image file"),
+        None => moonlander::IMAGE.to_vec(),
+    };
+    let img = gt40::lda::parse(&bytes).expect("memory image");
     m.load(&img);
     let mut h = host.lock().unwrap();
     loop {

@@ -39,8 +39,10 @@ usage: moonlander [options]
   --clean           start with clean vectors instead of the phosphor
   --50hz            a 50 Hz mains supply (the default is 60 Hz)
   --demo [PLAN]     let the autopilot fly: land (the default), mcdonalds,
-                    flag, crash, spin
+                    flag, crash, arches, spin
   --mute            no bell
+  --image PATH      load and run this .lda image on the emulated processor
+                    instead of the game (implies --original)
   --help            this
 
 In the window, H shows the controls.";
@@ -75,7 +77,7 @@ struct Options {
 }
 
 fn options() -> Result<Options, String> {
-    let mut o = Options { cfg: Config { cpu: Cpu::Translation, line_hz: 60.0, demo: None }, clean: false, sound: true };
+    let mut o = Options { cfg: Config { cpu: Cpu::Translation, line_hz: 60.0, demo: None, image: None }, clean: false, sound: true };
     let mut args = std::env::args().skip(1).peekable();
     while let Some(a) = args.next() {
         match a.as_str() {
@@ -84,6 +86,11 @@ fn options() -> Result<Options, String> {
             "--50hz" => o.cfg.line_hz = 50.0,
             "--60hz" => o.cfg.line_hz = 60.0,
             "--mute" => o.sound = false,
+            "--image" => {
+                let p = args.next().ok_or("--image needs a path to an .lda file")?;
+                o.cfg.image = Some(std::path::PathBuf::from(p));
+                o.cfg.cpu = Cpu::Original;
+            }
             "--demo" => {
                 let plan = match args.peek().map(|s| s.as_str()) {
                     Some(p) if !p.starts_with("--") => {
@@ -93,6 +100,7 @@ fn options() -> Result<Options, String> {
                             "mcdonalds" => Plan::McDonalds,
                             "flag" => Plan::Flag,
                             "crash" => Plan::Hard { fps: 40 },
+                            "arches" => Plan::IntoMcDonalds,
                             "spin" => Plan::Spin,
                             other => return Err(format!("no such plan: {other}")),
                         }
