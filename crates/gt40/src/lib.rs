@@ -3,4 +3,5 @@
 
 pub mod chargen;
 pub mod lda;
+pub mod raster;
 pub mod vt11;

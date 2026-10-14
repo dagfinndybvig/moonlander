@@ -57,6 +57,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "kd11b"
+version = "0.1.0"
+dependencies = [
+ "gt40",
+ "png",
+]
+
+[[package]]
 name = "miniz_oxide"
 version = "0.8.9"
 source = "registry+https://github.com/rust-lang/crates.io-index"

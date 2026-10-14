@@ -149,6 +149,8 @@ pub struct Vt11 {
     pub stop_irq: bool,
     pub lp_irq: bool,
     pub timeout_irq: bool,
+    /// DPU time at which the most recent interrupt request was raised.
+    pub irq_time: Option<f64>,
     // Light pen.
     pub pen: Option<LightPen>,
     lp_inhibit_until: f64,
@@ -187,6 +189,7 @@ impl Vt11 {
             stop_irq: false,
             lp_irq: false,
             timeout_irq: false,
+            irq_time: None,
             pen: None,
             lp_inhibit_until: 0.0,
             t: 0.0,
@@ -317,12 +320,9 @@ impl Vt11 {
                 self.next_line_pulse += self.line_period;
             }
             match self.run {
-                Run::Idle | Run::Stopped => {
-                    if self.t < until {
-                        self.t = until;
-                    }
-                    return;
-                }
+                // A stopped display keeps its clock at the moment it stopped;
+                // the CPU's next write to the DPC catches it up.
+                Run::Idle | Run::Stopped => return,
                 Run::Sync => {
                     if self.next_line_pulse > until {
                         self.t = until;
@@ -354,6 +354,7 @@ impl Vt11 {
             }
             None => {
                 self.timeout_irq = true;
+                self.irq_time = Some(self.t);
                 self.run = Run::Stopped;
                 self.stop_flag = true;
                 None
@@ -419,6 +420,7 @@ impl Vt11 {
                         self.stop_flag = true;
                         if self.stop_int_enable {
                             self.stop_irq = true;
+                            self.irq_time = Some(self.t);
                         }
                     }
                 } else if w & 0o4 != 0 {
@@ -669,6 +671,7 @@ impl Vt11 {
             if c >= 0o40 {
                 // Illegal code in shift-out mode: interrupt the PDP-11.
                 self.timeout_irq = true;
+                self.irq_time = Some(self.t);
                 self.run = Run::Stopped;
                 self.stop_flag = true;
                 return false;
@@ -762,6 +765,7 @@ impl Vt11 {
         self.lp_inhibit_until = t + T_LP_INHIBIT;
         self.lp_flag = true;
         self.lp_irq = true;
+        self.irq_time = Some(t);
         self.run = Run::Stopped;
         if self.lp_intensify {
             self.out.push(Beam::Dot { x: self.x as f32, y: self.y as f32, t, level: 7 });
