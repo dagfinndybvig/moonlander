@@ -1,0 +1,11 @@
+[package]
+name = "moonlander"
+description = "Jack Burness's Moonlander (GT40, 1973), the Mare Assabet build, translated routine by routine into Rust"
+edition.workspace = true
+version.workspace = true
+
+[dependencies]
+gt40 = { path = "../gt40" }
+
+[dev-dependencies]
+kd11b = { path = "../kd11b" }

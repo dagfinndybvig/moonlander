@@ -169,6 +169,9 @@ impl Machine {
         self.bus.refs = 0;
         let start = self.bus.t;
         let result = self.execute();
+        // The instruction's own bus references; a trap's pushes and vector
+        // reads are part of the trap service time below.
+        let refs = self.bus.refs;
         self.instructions += 1;
         let (outcome, class) = match result {
             Ok(e) => (e.outcome, e.class),
@@ -193,7 +196,7 @@ impl Machine {
                 extra = self.timing.interrupt();
             }
         }
-        self.bus.t = start + self.timing.instruction(class, self.bus.refs) + extra;
+        self.bus.t = start + self.timing.instruction(class, refs) + extra;
     }
 
     /// Run until machine time reaches `until` or the processor halts.
