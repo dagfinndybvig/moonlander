@@ -49,8 +49,9 @@ fn main() {
     let img = gt40::lda::parse(&std::fs::read(&a[1]).unwrap()).unwrap();
     let out = &a[2];
     let lines: Vec<Vec<u8>> = a[3]
+        .replace("\\,", "\u{0}")
         .split(',')
-        .map(|l| l.replace("\\r", "\r").into_bytes())
+        .map(|l| l.replace("\u{0}", ",").replace("\\r", "\r").into_bytes())
         .collect();
     let mut m = Machine::new(0o20000, 60.0);
     m.load(&img);
