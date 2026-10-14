@@ -85,10 +85,13 @@ def main():
         if ln.addr is not None and ln.addr not in src_at:
             src_at[ln.addr] = ln.source.rstrip()
     insns = []
+    own_label = {}  # the label written on an instruction's own line
     end = -1
     for ln in sorted(cands, key=lambda l: l.addr):
         if ln.addr < end:
             continue  # an operand of the previous instruction
+        if ln.label:
+            own_label[ln.addr] = ln.label
         ins = pdp11.decode(rw, ln.addr)
         insns.append(ins)
         end = ln.addr + 2 * ins.length
@@ -165,7 +168,12 @@ def main():
     names = set()
     for b in blocks:
         if b["addr"] in label_at:
-            last = sorted(label_at[b["addr"]])[0]
+            names_here = sorted(label_at[b["addr"]])
+            if own_label.get(b["addr"]) in names_here:
+                names_here.remove(own_label[b["addr"]])
+                names_here.insert(0, own_label[b["addr"]])
+            label_at[b["addr"]] = names_here
+            last = names_here[0]
             k = 0
             b["name"] = last
         else:
@@ -174,7 +182,7 @@ def main():
         assert b["name"] not in names
         names.add(b["name"])
         b["end"] = b["insns"][-1].addr + 2 * b["insns"][-1].length
-        b["aliases"] = sorted(label_at.get(b["addr"], []))[1:]
+        b["aliases"] = label_at.get(b["addr"], [])[1:]
 
     os.makedirs(OUT, exist_ok=True)
     os.makedirs(DATA, exist_ok=True)

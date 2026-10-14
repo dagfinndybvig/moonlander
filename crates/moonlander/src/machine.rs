@@ -82,6 +82,8 @@ pub struct Moonlander {
     pub psw: u16,
     /// Start of the block being executed: the PC an interrupt would stack.
     pub pc: u16,
+    /// End of the block being executed: where a WAIT in it resumes.
+    block_end: u16,
     /// Time of the current block, charged when the next one starts.
     pending: &'static [f64],
     /// A bus error not yet acted on (the block in which it happened runs to
@@ -118,6 +120,7 @@ impl Moonlander {
             sp: 0,
             psw: 0,
             pc: img.start.unwrap_or(0),
+            block_end: 0,
             pending: &[],
             fault: None,
             limit: f64::INFINITY,
@@ -264,6 +267,7 @@ impl Moonlander {
         }
         self.pace()?;
         self.pending = b.cost;
+        self.block_end = b.end;
         Ok(())
     }
 
@@ -307,6 +311,9 @@ impl Moonlander {
     /// instruction's own time is in the current block.
     pub fn wait(&mut self) -> Flow {
         self.charge();
+        // An interrupt ends the WAIT; the PC stacked is the instruction
+        // after it, which starts the next block.
+        self.pc = self.block_end;
         loop {
             self.bus.sync();
             if let Some((_, vector)) = self.bus.pending_interrupt(self.priority()) {
@@ -326,7 +333,13 @@ impl Moonlander {
     /// whose time is in the routine's last block. Returns where the RTS
     /// went, which a routine can change by editing its return address.
     pub fn jsr(&mut self, ret: Block, routine: fn(&mut Self) -> Flow) -> Flow<u16> {
-        self.push(ret.addr);
+        self.jsr_at(ret.addr, routine)
+    }
+
+    /// JSR PC with the return address given as an address: for calls
+    /// followed by inline data, where the address pushed is the data's.
+    pub fn jsr_at(&mut self, ret: u16, routine: fn(&mut Self) -> Flow) -> Flow<u16> {
+        self.push(ret);
         routine(self)?;
         Ok(self.pop())
     }

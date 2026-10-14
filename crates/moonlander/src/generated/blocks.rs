@@ -3498,74 +3498,74 @@ pub const SASCIL_1: Block = Block { addr: 0o013206, end: 0o013214, n: 2, name: "
 /// ```text
 /// START:  RESET                           ; DO A FEW HEAVY RESETS
 /// ```
-pub const SHIPB1: Block = Block { addr: 0o032340, end: 0o032342, n: 1, name: "SHIPB1", cost: &[2.5, 20000.0] };
-pub const START: Block = SHIPB1;
+pub const START: Block = Block { addr: 0o032340, end: 0o032342, n: 1, name: "START", cost: &[2.5, 20000.0] };
+pub const SHIPB1: Block = START;
 /// ```text
 ///         RESET
 /// ```
-pub const SHIPB1_1: Block = Block { addr: 0o032342, end: 0o032344, n: 1, name: "SHIPB1_1", cost: &[2.5, 20000.0] };
+pub const START_1: Block = Block { addr: 0o032342, end: 0o032344, n: 1, name: "START_1", cost: &[2.5, 20000.0] };
 /// ```text
 ///         RESET                                                           ;RECON
 /// ```
-pub const SHIPB1_2: Block = Block { addr: 0o032344, end: 0o032346, n: 1, name: "SHIPB1_2", cost: &[2.5, 20000.0] };
+pub const START_2: Block = Block { addr: 0o032344, end: 0o032346, n: 1, name: "START_2", cost: &[2.5, 20000.0] };
 /// ```text
 ///         RESET                                                           ;RECON
 /// ```
-pub const SHIPB1_3: Block = Block { addr: 0o032346, end: 0o032350, n: 1, name: "SHIPB1_3", cost: &[2.5, 20000.0] };
+pub const START_3: Block = Block { addr: 0o032346, end: 0o032350, n: 1, name: "START_3", cost: &[2.5, 20000.0] };
 /// ```text
 ///         RESET                                                           ;RECON
 ///         MOV     #STACK,SP                                               ;RECON
 /// ```
-pub const SHIPB1_4: Block = Block { addr: 0o032350, end: 0o032356, n: 2, name: "SHIPB1_4", cost: &[2.5, 20000.0, 4.2] };
+pub const START_4: Block = Block { addr: 0o032350, end: 0o032356, n: 2, name: "START_4", cost: &[2.5, 20000.0, 4.2] };
 /// ```text
 ///         CLR     STATUS                                                  ;RECON
 ///         MOV     #NOLINE,4                                               ;RECON
 ///         CLR     6                                                       ;RECON
 /// ```
-pub const SHIPB1_5: Block = Block { addr: 0o032356, end: 0o032374, n: 3, name: "SHIPB1_5", cost: &[7.0, 7.2, 7.0] };
+pub const START_5: Block = Block { addr: 0o032356, end: 0o032374, n: 3, name: "START_5", cost: &[7.0, 7.2, 7.0] };
 /// ```text
 ///         TST     XCSR                    ;IS THERE A LINE?               ;RECON
 /// ```
-pub const SHIPB1_6: Block = Block { addr: 0o032374, end: 0o032400, n: 1, name: "SHIPB1_6", cost: &[5.5] };
+pub const START_6: Block = Block { addr: 0o032374, end: 0o032400, n: 1, name: "START_6", cost: &[5.5] };
 /// ```text
 ///         CLR     XBUF                                                    ;RECON
 ///         JSR     PC,XWAIT                                                ;RECON
 /// ```
-pub const SHIPB1_7: Block = Block { addr: 0o032400, end: 0o032410, n: 2, name: "SHIPB1_7", cost: &[7.0, 6.0] };
+pub const START_7: Block = Block { addr: 0o032400, end: 0o032410, n: 2, name: "START_7", cost: &[7.0, 6.0] };
 /// ```text
 ///         MOV     #203,XBUF               ;^C, EIGHTH BIT SET.            ;RECON
 ///         JSR     PC,XWAIT                                                ;RECON
 /// ```
-pub const SHIPB1_8: Block = Block { addr: 0o032410, end: 0o032422, n: 2, name: "SHIPB1_8", cost: &[7.2, 6.0] };
+pub const START_8: Block = Block { addr: 0o032410, end: 0o032422, n: 2, name: "START_8", cost: &[7.2, 6.0] };
 /// ```text
 ///         MOV     #203,XBUF               ;^C AGAIN.                      ;RECON
 ///         JSR     PC,XWAIT                                                ;RECON
 /// ```
-pub const SHIPB1_9: Block = Block { addr: 0o032422, end: 0o032434, n: 2, name: "SHIPB1_9", cost: &[7.2, 6.0] };
+pub const START_9: Block = Block { addr: 0o032422, end: 0o032434, n: 2, name: "START_9", cost: &[7.2, 6.0] };
 /// ```text
 ///         MOV     #'K,XBUF                ;KJOB                           ;RECON
 ///         JSR     PC,XWAIT                                                ;RECON
 /// ```
-pub const SHIPB1_10: Block = Block { addr: 0o032434, end: 0o032446, n: 2, name: "SHIPB1_10", cost: &[7.2, 6.0] };
+pub const START_10: Block = Block { addr: 0o032434, end: 0o032446, n: 2, name: "START_10", cost: &[7.2, 6.0] };
 /// ```text
 ///         MOV     #'/,XBUF                                                ;RECON
 ///         JSR     PC,XWAIT                                                ;RECON
 /// ```
-pub const SHIPB1_11: Block = Block { addr: 0o032446, end: 0o032460, n: 2, name: "SHIPB1_11", cost: &[7.2, 6.0] };
+pub const START_11: Block = Block { addr: 0o032446, end: 0o032460, n: 2, name: "START_11", cost: &[7.2, 6.0] };
 /// ```text
 ///         MOV     #'F,XBUF                ;/F, FAST.                      ;RECON
 ///         JSR     PC,XWAIT                                                ;RECON
 /// ```
-pub const SHIPB1_12: Block = Block { addr: 0o032460, end: 0o032472, n: 2, name: "SHIPB1_12", cost: &[7.2, 6.0] };
+pub const START_12: Block = Block { addr: 0o032460, end: 0o032472, n: 2, name: "START_12", cost: &[7.2, 6.0] };
 /// ```text
 ///         MOV     #15,XBUF                                                ;RECON
 ///         JSR     PC,XWAIT                                                ;RECON
 /// ```
-pub const SHIPB1_13: Block = Block { addr: 0o032472, end: 0o032504, n: 2, name: "SHIPB1_13", cost: &[7.2, 6.0] };
+pub const START_13: Block = Block { addr: 0o032472, end: 0o032504, n: 2, name: "START_13", cost: &[7.2, 6.0] };
 /// ```text
 ///         BR      LINEOK                                                  ;RECON
 /// ```
-pub const SHIPB1_14: Block = Block { addr: 0o032504, end: 0o032506, n: 1, name: "SHIPB1_14", cost: &[2.4] };
+pub const START_14: Block = Block { addr: 0o032504, end: 0o032506, n: 1, name: "START_14", cost: &[2.4] };
 /// ```text
 /// NOLINE: CMP     (SP)+,(SP)+             ;BUS ERROR. DROP THE TRAP.      ;RECON
 /// ```
@@ -4185,21 +4185,21 @@ pub static ALL: &[Block] = &[
     SASCII_2,
     SASCIL,
     SASCIL_1,
-    SHIPB1,
-    SHIPB1_1,
-    SHIPB1_2,
-    SHIPB1_3,
-    SHIPB1_4,
-    SHIPB1_5,
-    SHIPB1_6,
-    SHIPB1_7,
-    SHIPB1_8,
-    SHIPB1_9,
-    SHIPB1_10,
-    SHIPB1_11,
-    SHIPB1_12,
-    SHIPB1_13,
-    SHIPB1_14,
+    START,
+    START_1,
+    START_2,
+    START_3,
+    START_4,
+    START_5,
+    START_6,
+    START_7,
+    START_8,
+    START_9,
+    START_10,
+    START_11,
+    START_12,
+    START_13,
+    START_14,
     NOLINE,
     LINEOK,
     LINEOK_1,
