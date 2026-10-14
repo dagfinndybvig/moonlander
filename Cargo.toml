@@ -5,6 +5,13 @@ members = ["crates/gt40", "crates/kd11b", "crates/moonlander", "crates/desktop"]
 [workspace.package]
 edition = "2021"
 version = "0.1.0"
+license = "MIT"
 
 [profile.release]
 debug = 1
+
+# The builds attached to releases: no debug information.
+[profile.dist]
+inherits = "release"
+debug = false
+strip = true

@@ -1,0 +1,111 @@
+name: Release
+
+# Pushing a tag such as v1.0 builds the desktop program for macOS (one
+# app for Apple silicon and Intel), Windows and Linux, and attaches the
+# three to a GitHub release for that tag.
+
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    name: ${{ matrix.name }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: macos
+            os: macos-latest
+          - name: windows-x86_64
+            os: windows-latest
+          - name: linux-x86_64
+            # The oldest supported runner, so the binary runs on older
+            # Linux systems too.
+            os: ubuntu-22.04
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+
+      - name: Build and package (macOS)
+        if: runner.os == 'macOS'
+        run: |
+          rustup target add aarch64-apple-darwin x86_64-apple-darwin
+          for t in aarch64-apple-darwin x86_64-apple-darwin; do
+            cargo build --profile dist --locked -p moonlander-desktop --target $t
+          done
+          version="${GITHUB_REF_NAME#v}"
+          app=dist/Moonlander/Moonlander.app
+          mkdir -p "$app/Contents/MacOS"
+          lipo -create -output "$app/Contents/MacOS/moonlander" \
+            target/aarch64-apple-darwin/dist/moonlander \
+            target/x86_64-apple-darwin/dist/moonlander
+          cat > "$app/Contents/Info.plist" <<PLIST
+          <?xml version="1.0" encoding="UTF-8"?>
+          <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+          <plist version="1.0">
+          <dict>
+            <key>CFBundleName</key><string>Moonlander</string>
+            <key>CFBundleDisplayName</key><string>Moonlander</string>
+            <key>CFBundleIdentifier</key><string>io.github.moonlander</string>
+            <key>CFBundleExecutable</key><string>moonlander</string>
+            <key>CFBundlePackageType</key><string>APPL</string>
+            <key>CFBundleShortVersionString</key><string>${version}</string>
+            <key>CFBundleVersion</key><string>${version}</string>
+            <key>LSMinimumSystemVersion</key><string>11.0</string>
+            <key>NSHighResolutionCapable</key><true/>
+          </dict>
+          </plist>
+          PLIST
+          plutil -lint "$app/Contents/Info.plist"
+          codesign --force --sign - "$app"
+          cp LICENSE README.md dist/Moonlander/
+          ditto -c -k --keepParent dist/Moonlander moonlander-macos.zip
+
+      - name: Build and package (Windows)
+        if: runner.os == 'Windows'
+        shell: bash
+        run: |
+          cargo build --profile dist --locked -p moonlander-desktop
+          mkdir -p dist/Moonlander
+          cp target/dist/moonlander.exe LICENSE README.md dist/Moonlander/
+          cd dist && 7z a ../moonlander-windows-x86_64.zip Moonlander
+
+      - name: Build and package (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update && sudo apt-get install -y libasound2-dev
+          cargo build --profile dist --locked -p moonlander-desktop
+          mkdir -p dist/moonlander
+          cp target/dist/moonlander LICENSE README.md dist/moonlander/
+          tar -C dist -czf moonlander-linux-x86_64.tar.gz moonlander
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.name }}
+          path: moonlander-*
+          if-no-files-found: error
+
+  release:
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+      - uses: softprops/action-gh-release@v2
+        with:
+          files: dist/*
+          body: |
+            Moonlander on a modelled GT40, ready to run.
+
+            - **macOS** (Apple silicon and Intel): unzip and open Moonlander. The app is not signed, so macOS blocks it the first time: open System Settings, Privacy & Security, and choose "Open Anyway".
+            - **Windows**: unzip and run `moonlander.exe`. If SmartScreen warns you, choose "More info", then "Run anyway".
+            - **Linux**: unpack and run `./moonlander`. The bell needs ALSA (`libasound2`).
+
+            Options such as `--demo mcdonalds` and `--original` work from a terminal; see the README.

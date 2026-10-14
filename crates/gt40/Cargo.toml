@@ -3,6 +3,7 @@ name = "gt40"
 description = "DEC GT40 hardware models: VT11 display processor, character generator, line clock"
 edition.workspace = true
 version.workspace = true
+license.workspace = true
 
 [dependencies]
 rayon = "1"

@@ -3,6 +3,7 @@ name = "kd11b"
 description = "KD11-B (PDP-11/05) processor and GT40 machine model"
 edition.workspace = true
 version.workspace = true
+license.workspace = true
 
 [dependencies]
 gt40 = { path = "../gt40" }

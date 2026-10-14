@@ -3,6 +3,7 @@ name = "moonlander-desktop"
 description = "Moonlander on a modelled GT40: the P39 phosphor, the light pen on the mouse, the keyboard through the same pen"
 edition.workspace = true
 version.workspace = true
+license.workspace = true
 
 [[bin]]
 name = "moonlander"

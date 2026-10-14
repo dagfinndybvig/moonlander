@@ -5,6 +5,9 @@
 //! phosphor or as clean vectors, and turns the mouse and the keyboard into
 //! the light pen (`keys`).
 
+// A release build on Windows opens no console window beside the game.
+#![cfg_attr(all(windows, not(debug_assertions)), windows_subsystem = "windows")]
+
 mod host;
 mod keys;
 mod overlay;

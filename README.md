@@ -17,7 +17,9 @@ The [journal](journal/) records how each part was done, what was checked and how
 
 ## Running it
 
-You need a Rust toolchain (`rustup` gives you one). Then:
+Ready-built copies for macOS, Windows and Linux are attached to the [releases](../../releases). They are not signed. The first time you open the Mac copy, macOS blocks it; allow it under System Settings, Privacy & Security, "Open Anyway". On Windows, SmartScreen may warn you: choose "More info", then "Run anyway".
+
+To build it yourself you need a Rust toolchain (`rustup` gives you one). Then:
 
 ```
 cargo run --release -p moonlander-desktop
@@ -99,6 +101,8 @@ cargo test --release -p moonlander
 
 runs the routine-level comparisons and the whole-program flights against the original binary on the emulated processor. The flights take about two minutes on two cores.
 
-## Credits
+## Credits and licences
 
 Moonlander is Jack Burness's. The 1973 listing has come down through Al Kossow and Eric Smith; Rick Naro collected it with the Mare Assabet binary, an RT-11 adaptation, Jim Storer's 1969 game and DEC's documentation in [sillygoose/moonlander](https://github.com/sillygoose/moonlander) (MIT licence), and John Holden supplied the binary. The VT11 character shapes are taken verbatim from open-simh's `display/vt11.c` (Philip L. Budne and Douglas A. Gwyn, MIT-style licence; the notice is kept in `crates/gt40/src/chargen.rs`). The 1973 listing was assembled with Rhialto's `macro11`, and simh served as the independent reference for the processor.
+
+The work done here is under the MIT licence ([`LICENSE`](LICENSE)). Moonlander itself is not: the reconstructed source and the translation are versions of Burness's program, and the material above keeps its own terms. DEC's manuals are not included; [`reference/hardware-docs/`](reference/hardware-docs/) says where to find them.
