@@ -1,3 +1,5 @@
+<img width="1018" height="175" alt="image" src="https://github.com/user-attachments/assets/056a5487-ec29-4543-931e-8188af6fb5df" />
+
 # FORTH on the GT40
 
 Moonlander fills the GT40's 8K words of memory almost exactly: the game, the display list, the stacks, and the little monitor that loads it. That is what a 1973 trade-show demonstration had to do. But the same board — a PDP-11/05, a VT11 vector display, a keyboard — was sold as a general small computer, and the question this fork asks is what else that computer could be. Not with an operating system; the GT40 never really had one, just a bootstrap in ROM and programs that arrived on paper tape. Bare metal, and a high-level language small enough to leave room to work in.
