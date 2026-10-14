@@ -8,6 +8,7 @@
 //! requests and display timing, because both use this code.
 
 use crate::vt11::{DisplayBus, LightPen, Vt11};
+use std::collections::VecDeque;
 
 /// A bus error: odd address on a word access, or no device at the address.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -81,6 +82,11 @@ pub struct Terminal {
     /// Order-independent hash of all of core, kept up to date on every
     /// write. Two machines with equal hashes almost surely hold equal core.
     pub mem_hash: u64,
+    /// Words to deposit in core at given times, as from the console: (time,
+    /// address, value), in time order. Applied when the devices are brought
+    /// up to time, so two machines given the same deposits make them at the
+    /// same points in their programs.
+    pub deposits: VecDeque<(f64, u16, u16)>,
 }
 
 struct Core<'a>(&'a [u16]);
@@ -116,6 +122,7 @@ impl Terminal {
             access_log: None,
             bells: Vec::new(),
             mem_hash: 0,
+            deposits: VecDeque::new(),
         };
         t.unibus_init();
         t.rehash();
@@ -308,8 +315,17 @@ impl Terminal {
         }
     }
 
-    /// Bring every device up to machine time.
+    /// Bring every device up to machine time, making any deposits due.
     pub fn sync(&mut self) {
+        while let Some(&(at, a, v)) = self.deposits.front() {
+            if at > self.t {
+                break;
+            }
+            if self.in_core(a) && a & 1 == 0 {
+                self.store(a, v);
+            }
+            self.deposits.pop_front();
+        }
         self.sync_display();
         self.advance_clock();
     }

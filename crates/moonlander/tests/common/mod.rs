@@ -81,7 +81,9 @@ pub fn run_original(s: &Start) -> End {
     let starts = block_starts();
     let mut trace = Vec::new();
     let mut steps = 0;
-    while !(m.r[7] == s.ret && m.r[6] == s.regs[6]) {
+    // Returned: at the return address, with the stack back at or above where
+    // the caller had it (PUTFET also removes its two arguments).
+    while !(m.r[7] == s.ret && m.r[6] >= s.regs[6]) {
         if starts[(m.r[7] >> 1) as usize] {
             trace.push(m.r[7]);
         }

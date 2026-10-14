@@ -48,15 +48,42 @@ fn to_next_block(m: &mut Machine, starts: &[bool]) -> Result<(), String> {
     }
 }
 
+/// A flight: how long, who flies it, and what else is different.
+#[derive(Clone, Default)]
+struct Flight {
+    seconds: f64,
+    plan: Option<Plan>,
+    /// The GT40 has no line to a host computer.
+    no_host: bool,
+    /// Console deposits made on both sides: (seconds, address, value).
+    deposits: Vec<(f64, u16, u16)>,
+}
+
 /// Run both sides for `seconds` of machine time. With a plan, the autopilot
 /// flies the translation, and every pen movement it makes is given to the
 /// original too, for the same moment.
 fn lockstep(seconds: f64, plan: Option<Plan>) -> Result<Run, String> {
+    run_flight(Flight { seconds, plan, ..Default::default() })
+}
+
+fn run_flight(f: Flight) -> Result<Run, String> {
+    let (seconds, plan) = (f.seconds, f.plan);
     let starts = block_starts();
     let emu = Arc::new(Mutex::new(emulator()));
     let failure: Arc<Mutex<Option<String>>> = Arc::new(Mutex::new(None));
     let mut tr = Moonlander::new(60.0);
     tr.limit = seconds * 1e6;
+    {
+        let mut m = emu.lock().unwrap();
+        for &(t, a, v) in &f.deposits {
+            m.bus.deposits.push_back((t * 1e6, a, v));
+            tr.bus.deposits.push_back((t * 1e6, a, v));
+        }
+        if f.no_host {
+            m.bus.host = None;
+            tr.bus.host = None;
+        }
+    }
     let messages = Arc::new(Mutex::new(Vec::<u16>::new()));
     {
         let mut pilot = plan.map(Pilot::new);
@@ -157,7 +184,12 @@ fn greeting_flight_and_crash_with_no_hands() {
 static COVERED: Mutex<Vec<u16>> = Mutex::new(Vec::new());
 
 fn fly(plan: Plan, seconds: f64, expect: &[u16]) {
-    let r = lockstep(seconds, Some(plan)).unwrap_or_else(|e| panic!("{plan:?}: {e}"));
+    fly_with(Flight { seconds, plan: Some(plan), ..Default::default() }, expect);
+}
+
+fn fly_with(f: Flight, expect: &[u16]) {
+    let plan = f.plan;
+    let r = run_flight(f).unwrap_or_else(|e| panic!("{plan:?}: {e}"));
     assert_eq!(r.end, Escape::Stop);
     for m in expect {
         assert!(r.messages.contains(m), "{plan:?}: expected message {m:06o}, saw [{}]", oct(&r.messages));
@@ -171,8 +203,14 @@ fn fly(plan: Plan, seconds: f64, expect: &[u16]) {
 
 #[test]
 fn perfect_landing_by_the_mcdonalds() {
-    // The man walks over, orders, walks back, and the ship takes off.
-    fly(Plan::McDonalds, 280.0, &[GREATM, ORDER]);
+    // The man walks over, orders, walks back, and the ship takes off. With
+    // the ground under the far side of the restaurant raised (a console
+    // deposit into the terrain), MACDON places it by the other corner.
+    fly(Plan::McDonalds, 420.0, &[GREATM, ORDER]);
+    fly_with(
+        Flight { seconds: 260.0, plan: Some(Plan::McDonalds), deposits: vec![(35.0, TERAIN + 2 * 704, 90)], ..Default::default() },
+        &[GREATM, ORDER],
+    );
 }
 
 #[test]
@@ -181,15 +219,71 @@ fn landing_and_planting_a_flag() {
 }
 
 #[test]
-fn landings_too_hard() {
+fn landings_good_and_too_hard() {
+    fly(Plan::Hard { fps: 10 }, 240.0, &[GOODM, MANMSG]);
     fly(Plan::Hard { fps: 20 }, 240.0, &[ROUGHM]);
     fly(Plan::Hard { fps: 40 }, 240.0, &[CRIPM]);
+    fly(Plan::Brake, 360.0, &[]);
 }
 
 #[test]
 fn tipping_over() {
-    fly(Plan::Tilted { degrees: 25 }, 240.0, &[SIDEM]);
+    fly(Plan::Sliding { fps: -15 }, 240.0, &[SIDEM]);
+    fly(Plan::Tilted { degrees: 25 }, 240.0, &[ANGLEM]);
     fly(Plan::Bumpy, 270.0, &[BUMPYM]);
+    fly(Plan::LandAt { index: 582 }, 300.0, &[BUMPYM]);
+}
+
+#[test]
+fn turning_right_round() {
+    fly(Plan::Spin, 280.0, &[]);
+}
+
+#[test]
+fn flying_low_across_the_close_up() {
+    fly(Plan::LowDrift { fps: -30, alt: 300 }, 300.0, &[]);
+    fly(Plan::LowDrift { fps: 30, alt: 300 }, 320.0, &[]);
+}
+
+#[test]
+fn running_out_of_fuel() {
+    // 210 pounds left, deposited ten seconds into the flight: the low fuel
+    // warning and its bell, then the engine stops for good.
+    fly_with(Flight { seconds: 200.0, plan: Some(Plan::Land), deposits: vec![(40.0, FUEL, 2100)], ..Default::default() }, &[]);
+}
+
+#[test]
+fn no_line_to_a_host() {
+    // The start-up probe of the serial line takes a bus error and skips the
+    // logout.
+    fly_with(Flight { seconds: 40.0, no_host: true, ..Default::default() }, &[]);
+}
+
+/// Features from earlier games near terrain index 660, as console deposits
+/// into the feature table: a flag at 655, a landed ship at 658, wrecks
+/// tilted left at 662 and right at 664.
+fn earlier_games() -> Vec<(f64, u16, u16)> {
+    let mut mem = std::collections::BTreeMap::new();
+    let img = gt40::lda::parse(moonlander::IMAGE).unwrap();
+    for &(a, b) in &img.bytes {
+        mem.insert(a, b);
+    }
+    for (i, f) in [(655u16, 2u8), (658, 1), (662, 3), (664, 4)] {
+        let a = FEATUR + i / 2;
+        let b = mem.get(&a).copied().unwrap_or(0);
+        mem.insert(a, if i & 1 != 0 { (b & 0x0F) | (f << 4) } else { (b & 0xF0) | f });
+    }
+    let mut words: Vec<u16> = [655u16, 658, 662, 664].iter().map(|i| (FEATUR + i / 2) & !1).collect();
+    words.dedup();
+    words.iter().map(|&a| (35.0, a, mem[&a] as u16 | (mem.get(&(a + 1)).copied().unwrap_or(0) as u16) << 8)).collect()
+}
+
+#[test]
+fn what_earlier_games_left_behind() {
+    let f = |index| Flight { seconds: 250.0, plan: Some(Plan::LandAt { index }), deposits: earlier_games(), ..Default::default() };
+    fly_with(f(655), &[FLAGMS, GREATM]);
+    fly_with(f(658), &[OLDMS]);
+    fly_with(f(662), &[OLDTLT]);
 }
 
 #[test]

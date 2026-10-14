@@ -45,6 +45,14 @@ pub enum Plan {
     Bumpy,
     /// Come down on the McDonald's itself.
     IntoMcDonalds,
+    /// Land at terrain index `index`, whatever is there.
+    LandAt { index: i16 },
+    /// Hold the big left arrow until the ship has turned right round.
+    Spin,
+    /// Fall fast to 30 feet, then brake at full throttle.
+    Brake,
+    /// Hold `alt` feet and drift sideways at `fps` (negative is left).
+    LowDrift { fps: i16, alt: i16 },
 }
 
 /// Where the pen can be put.
@@ -139,11 +147,13 @@ impl Pilot {
         match self.plan {
             Plan::Bumpy => return Some(625.0 * 32.0 - 22400.0 + 16.0),
             Plan::IntoMcDonalds => return Some(703.0 * 32.0 - 22400.0 + 16.0),
+            Plan::LandAt { index } => return Some(index as f64 * 32.0 - 22400.0 + 16.0),
+            Plan::LowDrift { .. } => return None,
             _ => {}
         }
         let (lo, hi) = match self.plan {
             Plan::McDonalds => (690, 700),
-            Plan::Flag | Plan::Tilted { .. } | Plan::Sliding { .. } | Plan::Hard { .. } => (600, 682),
+            Plan::Flag | Plan::Tilted { .. } | Plan::Sliding { .. } | Plan::Hard { .. } | Plan::Brake => (600, 682),
             _ => (20, 880),
         };
         (0..400)
@@ -185,7 +195,7 @@ impl Pilot {
             self.down = Some(bus.t);
         }
         if let Some(t) = self.down {
-            if bus.t - t < 60e6 && word(bus, VERDIS) < 20000 {
+            if bus.t - t < 100e6 && word(bus, VERDIS) < 20000 {
                 return Spot::Away;
             }
             self.down = None;
@@ -193,6 +203,9 @@ impl Pilot {
         }
         if self.site.is_none() && word(bus, RADARY) < 6000 && word(bus, HORVEL).abs() < 400 {
             self.site = self.pick_site(bus, word(bus, BIGXCT) as i32);
+        }
+        if self.plan == Plan::Spin && bus.t > 40e6 && bus.t < 55e6 {
+            return Spot::Turn(-100); // round and round, for fifteen seconds
         }
         let (theta, percent) = self.wanted(bus);
         let err = theta - word(bus, ANGLE) as f64;
@@ -244,6 +257,15 @@ impl Pilot {
         let (want_vy, want_vx, tilt) = match self.plan {
             Plan::Climb => (40.0, 0.0, None),
             Plan::Drift { fps } => (0.0, fps as f64, None),
+            Plan::Brake if alt > 30.0 => (-60.0, to_site, None),
+            Plan::Brake => (0.0, 0.0, None),
+            Plan::LowDrift { fps, alt: hold } if alt < 2.0 * hold as f64 => {
+                (((hold as f64 - alt) * 0.2).clamp(-30.0, 30.0), fps as f64, None)
+            }
+            Plan::LowDrift { .. } => (profile, 0.0, None),
+            // Come in moving gently the other way, so that tipping the ship
+            // over at the last moment takes the sideways speed to nothing.
+            Plan::Tilted { degrees } if alt < 80.0 && alt >= 40.0 => (profile, -0.25 * degrees as f64, None),
             Plan::Hard { fps } if alt < 300.0 => (-(fps as f64), 0.0, None),
             Plan::Tilted { degrees } if alt < 40.0 => (profile, 0.0, Some(degrees as f64)),
             Plan::Sliding { fps } if alt < 300.0 => (profile, fps as f64, None),
@@ -264,7 +286,14 @@ impl Pilot {
         if let Some(t) = tilt {
             theta = t;
         }
-        let percent = ((ax * ax + ay * ay).sqrt().min(a_max) / per_percent).clamp(10.0, 100.0);
+        let mut percent = ((ax * ax + ay * ay).sqrt().min(a_max) / per_percent).clamp(10.0, 100.0);
+        match self.plan {
+            // Pen above the top of the bar: the program clamps it to 100.
+            Plan::Climb => percent = 110.0,
+            Plan::Brake if alt <= 30.0 => percent = 100.0,
+            Plan::Tilted { .. } if alt < 40.0 => percent = 10.0,
+            _ => {}
+        }
         (theta, percent.round() as u16)
     }
 }

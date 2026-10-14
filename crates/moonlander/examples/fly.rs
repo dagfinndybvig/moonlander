@@ -21,7 +21,7 @@ fn main() {
     let plan = match a.get(1).map(|s| s.as_str()).unwrap_or("land") {
         "hard" => Plan::Hard { fps: 20 },
         "tilted" => Plan::Tilted { degrees: 25 },
-        "sliding" => Plan::Sliding { fps: 15 },
+        "sliding" => Plan::Sliding { fps: -15 },
         "climb" => Plan::Climb,
         "readout" => Plan::Readout { item: 4, slot: 1 },
         "left" => Plan::Drift { fps: -150 },
@@ -32,12 +32,26 @@ fn main() {
         "rough" => Plan::Hard { fps: 20 },
         "cripple" => Plan::Hard { fps: 40 },
         "dead" => Plan::Hard { fps: 70 },
+        "good" => Plan::Hard { fps: 10 },
+        "spin" => Plan::Spin,
+        "brake" => Plan::Brake,
+        "lowleft" => Plan::LowDrift { fps: -30, alt: 300 },
+        "lowright" => Plan::LowDrift { fps: 30, alt: 300 },
+        s if s.starts_with("at") => Plan::LandAt { index: s[2..].parse().unwrap() },
         "right" => Plan::Drift { fps: 150 },
         _ => Plan::Land,
     };
     let secs: f64 = a.get(2).and_then(|s| s.parse().ok()).unwrap_or(150.0);
     let mut m = Moonlander::new(60.0);
     m.limit = secs * 1e6;
+    // DEP=t:addr:value,... (seconds, octal, octal): console deposits.
+    if let Ok(d) = std::env::var("DEP") {
+        for item in d.split(',') {
+            let f: Vec<&str> = item.split(':').collect();
+            let t: f64 = f[0].parse().unwrap();
+            m.bus.deposits.push_back((t * 1e6, u16::from_str_radix(f[1], 8).unwrap(), u16::from_str_radix(f[2], 8).unwrap()));
+        }
+    }
     let pilot = Arc::new(Mutex::new(Pilot::new(plan)));
     let p2 = pilot.clone();
     let mut next_print = 30e6;
@@ -54,7 +68,28 @@ fn main() {
         }
         true
     }));
+    // VISIT=NAME,NAME: report whether these blocks ran.
+    let watch: Vec<(u16, String)> = std::env::var("VISIT")
+        .map(|v| {
+            v.split(',')
+                .map(|n| (moonlander::generated::blocks::ALL.iter().find(|b| b.name == n).expect("block").addr, n.to_string()))
+                .collect()
+        })
+        .unwrap_or_default();
+    let hits = Arc::new(Mutex::new(std::collections::BTreeSet::new()));
+    if !watch.is_empty() {
+        let (h2, w2) = (hits.clone(), watch.clone());
+        m.observer = Some(Box::new(move |s| {
+            if let Some((_, n)) = w2.iter().find(|(a, _)| *a == s.addr) {
+                h2.lock().unwrap().insert(n.clone());
+            }
+            true
+        }));
+    }
     let end = m.run();
+    if !watch.is_empty() {
+        println!("visited: {:?}", hits.lock().unwrap());
+    }
     println!("stopped: {end:?} after {} blocks; {} pen moves", m.blocks, pilot.lock().unwrap().script.len());
     if std::env::var("MOVES").is_ok() {
         for (t, p) in &pilot.lock().unwrap().script {
