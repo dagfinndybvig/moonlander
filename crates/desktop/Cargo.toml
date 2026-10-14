@@ -1,0 +1,22 @@
+[package]
+name = "moonlander-desktop"
+description = "Moonlander on a modelled GT40: the P39 phosphor, the light pen on the mouse, the keyboard through the same pen"
+edition.workspace = true
+version.workspace = true
+
+[[bin]]
+name = "moonlander"
+path = "src/main.rs"
+
+[features]
+default = ["sound"]
+# The GT40's bell. Needs ALSA's development files on Linux.
+sound = ["dep:cpal"]
+
+[dependencies]
+gt40 = { path = "../gt40" }
+kd11b = { path = "../kd11b" }
+moonlander = { path = "../moonlander" }
+winit = "0.30"
+softbuffer = "0.4"
+cpal = { version = "0.15", optional = true }

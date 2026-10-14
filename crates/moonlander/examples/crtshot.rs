@@ -1,7 +1,7 @@
 //! Fly the translation and photograph the phosphor: the CRT model fed with
 //! every beam as it is drawn, saved at the given moments.
 //! Usage: crtshot PLAN SECONDS[,SECONDS...] PREFIX [WIDTH HEIGHT] [clean]
-use gt40::crt::{render_clean, Crt};
+use gt40::crt::{render_clean, Crt, CLEAN_SPAN_US};
 use gt40::vt11::Beam;
 use moonlander::pilot::{Pilot, Plan};
 use moonlander::Moonlander;
@@ -54,7 +54,7 @@ fn main() {
             c.deposit(&b);
             r.push(b);
         }
-        let cut = bus.t - 1e6 / 30.0;
+        let cut = bus.t - CLEAN_SPAN_US;
         r.retain(|b| match *b {
             Beam::Dot { t, .. } => t >= cut,
             Beam::Line { t1, .. } => t1 >= cut,

@@ -55,16 +55,49 @@ pub enum Plan {
     LowDrift { fps: i16, alt: i16 },
 }
 
-/// Where the pen can be put.
+/// Where the pen can be put: the controls on the face. The desktop front
+/// end's keyboard puts the pen in the same places.
 #[derive(Clone, Copy, Debug, PartialEq)]
-enum Spot {
+pub enum Spot {
     Away,
     /// The throttle bar at this percentage.
     Throttle(u16),
     /// A turning arrow: -100, -15, 15 or 100 degrees a second.
     Turn(i16),
+    /// One of the twelve readout choices down the right, 0 (HEIGHT) to 11.
     Item(u8),
+    /// One of the four readouts across the top, 0 to 3.
     Slot(u8),
+}
+
+/// Field of view of the pen the pilot holds, raster units.
+pub const PEN_RADIUS: f32 = 5.0;
+
+impl Spot {
+    /// The pen over this control, or away from the face.
+    pub fn pen(self) -> Option<LightPen> {
+        let p = |x: f32, y: f32| Some(LightPen { x, y, radius: PEN_RADIUS });
+        match self {
+            Spot::Away => None,
+            // The bar's three lines are at x 947, 950 and 953. With this
+            // pen its smoothed reading settles at about (Y - 466) / 2
+            // percent, a little under the (Y - 462) / 2 used here; the
+            // pilot steers by the reading, so the difference only means it
+            // asks for a little more than it gets.
+            Spot::Throttle(pct) => p(950.0, 462.0 + 2.0 * pct as f32),
+            // Small arrows 20 units long at y 375, big ones 40 long at 330.
+            Spot::Turn(r) if r <= -100 => p(925.0, 330.0),
+            Spot::Turn(r) if r < 0 => p(935.0, 375.0),
+            Spot::Turn(r) if r >= 100 => p(975.0, 330.0),
+            Spot::Turn(_) => p(965.0, 375.0),
+            // The twelve choices down the right-hand side, from HEIGHT at the
+            // top, and the four readout slots across the top: the pen goes
+            // on the first letter of the name (characters are 14 units apart
+            // and 16 high, and blanks show nothing to see).
+            Spot::Item(i) => p(921.0, ITEMY1 as f32 + 8.0 - i as f32 * (ITEMY1 - ITEMY2) as f32),
+            Spot::Slot(s) => p(105.0 + 250.0 * s as f32, DY1 as f32 + 8.0),
+        }
+    }
 }
 
 pub struct Pilot {
@@ -105,32 +138,11 @@ impl Pilot {
             if std::mem::discriminant(&spot) != std::mem::discriminant(&self.spot) {
                 self.since = bus.t;
             }
-            let pen = self.pen_at(spot);
+            let pen = spot.pen();
             let at = bus.t + 1000.0;
             bus.move_pen(at, pen);
             self.script.push((at, pen));
             self.spot = spot;
-        }
-    }
-
-    fn pen_at(&self, spot: Spot) -> Option<LightPen> {
-        let p = |x: f32, y: f32| Some(LightPen { x, y, radius: 5.0 });
-        match spot {
-            Spot::Away => None,
-            // The bar's three lines are at x 947, 950 and 953; its smoothed
-            // reading settles at (Y - 462) / 2 percent.
-            Spot::Throttle(pct) => p(950.0, 462.0 + 2.0 * pct as f32),
-            // Small arrows 20 units long at y 375, big ones 40 long at 330.
-            Spot::Turn(r) if r <= -100 => p(925.0, 330.0),
-            Spot::Turn(r) if r < 0 => p(935.0, 375.0),
-            Spot::Turn(r) if r >= 100 => p(975.0, 330.0),
-            Spot::Turn(_) => p(965.0, 375.0),
-            // The twelve choices down the right-hand side, from HEIGHT at the
-            // top, and the four readout slots across the top: the pen goes
-            // on the first letter of the name (characters are 14 units apart
-            // and 16 high, and blanks show nothing to see).
-            Spot::Item(i) => p(921.0, ITEMY1 as f32 + 8.0 - i as f32 * (ITEMY1 - ITEMY2) as f32),
-            Spot::Slot(s) => p(105.0 + 250.0 * s as f32, DY1 as f32 + 8.0),
         }
     }
 

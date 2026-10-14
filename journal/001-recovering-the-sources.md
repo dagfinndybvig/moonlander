@@ -27,7 +27,7 @@ f4b791c6ae667a2e03bccf18fc108d31ed6e551ef4967f03a7827137c1a9ae2f  lunar-1969.fcl
 
 ## First observations
 
-- The source is complete: 5,101 lines, every routine labeled and commented in Burness's voice ("THIS IS THE START OF THE DISPLAY SECTION. PLEASE BE MERCIFUL.").
+- The source is complete: 5,101 lines, every routine labeled and commented in Burness's voice ("THIS IS THE START OF THE DISPLAY SECTION. PLEASE BE MERICFUL.", spelling his).
 - Units are documented in the header: velocities in tenths of feet per second, accelerations at 500 times actual, distances in whole feet, fuel in tenths of pounds, angles as compass degrees.
 - Arithmetic is all integer, through hand-written routines (`MULTWO`, `DIVTWO`, unrolled shift-and-add). Trig comes from 360-entry tables, not computation.
 - Rick Naro's notes say the dust code "does not appear to be stable" and he disabled it in his build. This is the first candidate for a known defect in the original.
