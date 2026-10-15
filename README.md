@@ -1,4 +1,4 @@
-> **A fork standing on the shoulders of giants.** This began as a fork of [mctar/moonlander](https://github.com/mctar/moonlander), and we forked it for its tools: the original repository contains a model of the GT40 written from DEC's manuals — the PDP-11/05, the VT11 display processor, the console — faithful enough that the recovered Moonlander binary runs on it instruction for instruction. A machine modelled that well is worth more than one game. The work of the fork is [FORTH.md](FORTH.md): a small Forth, assembled from scratch, that runs bare metal on the same emulated hardware — our way of showing that the machine which could fly the lunar module could also carry a high-level language, interactively, inside its 8K words.
+> **A fork standing on the shoulders of giants.** This began as a fork of [mctar/moonlander](https://github.com/mctar/moonlander), and we forked it for its tools: the original repository — Thordur Arnason's work — contains a model of the GT40 written from DEC's manuals — the PDP-11/05, the VT11 display processor, the console — faithful enough that the recovered Moonlander binary runs on it instruction for instruction. Everything of that machine, of the reconstruction of the program, and of the journal that records how both were made is his, and this repository carries it as it came to us. What the fork adds on top is ours: [FORTH.md](FORTH.md), a small Forth, assembled from scratch, that runs bare metal on the same emulated hardware — with a bare-metal demo, a film tool, and the desktop paths that run them — our way of showing that the machine which could fly the lunar module could also carry a high-level language, interactively, inside its 8K words. The work of the fork is also a showcase of agentic reverse coding: written, audited and fixed by various coding agents under Dagfinn Dybvig's direction, the commit history naming who did each step. The hope behind that method is larger than one language on one machine: with agents to share the painstaking work of reconstruction — reading, checking, testing, fixing, documenting — treasures of the past may be recovered that would otherwise fade from view, because such reconstruction is more than one person usually has time to do alone.
 
 # Moonlander, recovered
 
@@ -36,6 +36,7 @@ The greeting stays up for thirty seconds before the game starts, as it did on th
 | `--50hz` | a 50 Hz mains supply (the default is 60 Hz, as in the United States) |
 | `--demo [PLAN]` | let the autopilot fly: `land`, `mcdonalds`, `flag`, `crash`, `spin` |
 | `--mute` | no bell |
+| `--image FILE` | *(this fork)* run an absolute loader image, such as the Forth's `forth.lda`, instead of the game |
 
 On Linux the bell needs ALSA's development files (`libasound2-dev` on Debian and Ubuntu). To build without sound, add `--no-default-features`.
 
@@ -69,6 +70,8 @@ The default view models the GT40's VR14 monitor and its P39 phosphor, a long-per
 
 ## What is here
 
+Everything unmarked is Thordur Arnason's, as it came from the original repository; the entries marked *(this fork)* are ours.
+
 | Path | What it is |
 |---|---|
 | [`journal/`](journal/) | The working record, in order. Start here. |
@@ -81,6 +84,11 @@ The default view models the GT40's VR14 monitor and its P39 phosphor, a long-per
 | [`crates/kd11b`](crates/kd11b/) | The PDP-11/05 processor (KD11-B), with instruction times from DEC's PDP-11/05 manual. |
 | [`crates/moonlander`](crates/moonlander/) | The translation, its generated tables, the autopilot, and the tests that compare it with the original. |
 | [`crates/desktop`](crates/desktop/) | The program you run. |
+| [`FORTH.md`](FORTH.md) | *(this fork)* The Forth for the same machine: the language, a first session, the kernel from the inside. |
+| [`forth.a11`](forth.a11), [`asm11.py`](asm11.py), [`build-forth.py`](build-forth.py) | *(this fork)* The Forth kernel in PDP-11 assembly, the two-pass assembler that builds it, and the built image, `forth.lda` with its listing. |
+| [`crates/kd11b/examples/forthtest.rs`](crates/kd11b/examples/forthtest.rs) | *(this fork)* Boots the Forth headlessly, types lines at it, and prints the screen. |
+| [`baremetal-demo.py`](baremetal-demo.py), [`demo.lda`](demo.lda) | *(this fork)* A bare-metal demo that came before the Forth: a pulsing square and a bouncing dot. |
+| [`crates/moonlander/examples/film.rs`](crates/moonlander/examples/film.rs) | *(this fork)* Renders a flight to film, for shareable loops; `docs/film/` holds its edit list. |
 
 ## The journal
 
@@ -107,4 +115,4 @@ runs the routine-level comparisons and the whole-program flights against the ori
 
 Moonlander is Jack Burness's. The 1973 listing has come down through Al Kossow and Eric Smith; Rick Naro collected it with the Mare Assabet binary, an RT-11 adaptation, Jim Storer's 1969 game and DEC's documentation in [sillygoose/moonlander](https://github.com/sillygoose/moonlander) (MIT licence), and John Holden supplied the binary. The VT11 character shapes are taken verbatim from open-simh's `display/vt11.c` (Philip L. Budne and Douglas A. Gwyn, MIT-style licence; the notice is kept in `crates/gt40/src/chargen.rs`). The 1973 listing was assembled with Rhialto's `macro11`, and simh served as the independent reference for the processor.
 
-The work done here is under the MIT licence ([`LICENSE`](LICENSE)). Moonlander itself is not: the reconstructed source and the translation are versions of Burness's program, and the material above keeps its own terms. DEC's manuals are not included; [`reference/hardware-docs/`](reference/hardware-docs/) says where to find them.
+Of the work under that licence, the machine and the recovery are Thordur Arnason's — the emulator crates, the reconstruction, the oracle tools, the journal, the desktop program — as they came from the original repository. The Forth and everything it needed are this fork's, Dagfinn Dybvig's: the kernel, the assembler and the builder, the headless test, the bare-metal demo, the film tool, and the desktop's `--image` path and keyboard console. The fork's work was done by various coding agents, with Dybvig directing — deliberately, as a demonstration of agentic reverse coding on a machine recovered by hand; the commits name the author of each piece. Both are under the MIT licence ([`LICENSE`](LICENSE)). Moonlander itself is not: the reconstructed source and the translation are versions of Burness's program, and the material above keeps its own terms. DEC's manuals are not included; [`reference/hardware-docs/`](reference/hardware-docs/) says where to find them.
