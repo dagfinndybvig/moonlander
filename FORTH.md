@@ -18,7 +18,7 @@ The GT40 came out in 1972 and Moonlander was written in February 1973, so a PDP-
 
 ## The system
 
-The kernel is `forth.a11`, about 1,100 words of machine code, assembled by `asm11.py` — a small two-pass assembler written for this project because the period tools are not on hand — and packaged by `build-forth.py` into the same absolute paper-tape format the GT40's loader used, and that this repository's emulator reads:
+The kernel is `forth.a11`, about 1,200 words of machine code, assembled by `asm11.py` — a small two-pass assembler written for this project because the period tools are not on hand — and packaged by `build-forth.py` into the same absolute paper-tape format the GT40's loader used, and that this repository's emulator reads:
 
 ```
 python build-forth.py forth.a11 forth.lda
@@ -97,9 +97,9 @@ T
 111 
 ```
 
-`DO` runs its body at least once and steps until the index reaches the limit. `BEGIN ... UNTIL` repeats until the flag is true; `BEGIN ... WHILE ... REPEAT` tests at the top. `IF` consumes a flag and compiles a conditional branch — inside a definition, `IF`, `ELSE`, `THEN`, `BEGIN`, `DO` and their partners are immediate words that execute at compile time and patch the branch offsets into the definition as it is being built. That mechanism, more than any other, is what makes a Forth compiler small: control flow is just words that compile other words.
+`DO` runs its body at least once and steps until the index reaches the limit. `BEGIN ... UNTIL` repeats until the flag is true; `BEGIN ... WHILE ... REPEAT` tests at the top. `IF` consumes a flag and compiles a conditional branch — inside a definition, `IF`, `ELSE`, `THEN`, `BEGIN`, `DO` and their partners are immediate words that execute at compile time and patch the branch offsets into the definition as it is being built. That mechanism, more than any other, is what makes a Forth compiler small: control flow is just words that compile other words. (`I` reads the top of the return stack, so a `>R` inside a loop body hides the index from it: ask for `I` only outside any `>R` ... `R>` pair.)
 
-A word the system does not know — inside a definition or out — prints `?` and returns to the prompt. If it happened inside a definition, the half-built definition is discarded, so a mistyped name costs nothing but the typing.
+A word the system does not know — inside a definition or out — prints `?` and returns to the prompt. If it happened inside a definition, the half-built definition is discarded, so a mistyped name costs nothing but the typing. The same `?` answers two more mistakes: a control-flow word — `IF`, `DO`, `;` — used outside a definition, where the branch it would compile leads nowhere; and a definition left unfinished at the end of its line, which is discarded as an error discards one, with nothing broken left in the dictionary.
 
 `CREATE` and `HERE` extend the language to data:
 
@@ -140,4 +140,4 @@ Everything above `34000` is stack headroom, and the dictionary can grow for anot
 
 ## What it is not
 
-It is a demonstration, not a distribution. There is no disk, no file system, no editor beyond backspace, no division, and no floating point; word names are capped at 17 characters and input lines at 64, the size of their buffers; definitions are lost when the power goes off, as they would have been on a paper-tape machine. What it does show is the claim this fork was made to test: the same emulated hardware that runs Moonlander instruction for instruction can boot a high-level language, give you a prompt, and compile your words — bare metal, in 8K words, on a machine whose only output device is a vector display.
+It is a demonstration, not a distribution. There is no disk, no file system, no editor beyond backspace, no division, and no floating point; word names are capped at 17 characters and input lines at 64, the size of their buffers; nothing checks stack depth, and arithmetic and number parsing wrap silently at 16 bits; definitions are lost when the power goes off, as they would have been on a paper-tape machine. What it does show is the claim this fork was made to test: the same emulated hardware that runs Moonlander instruction for instruction can boot a high-level language, give you a prompt, and compile your words — bare metal, in 8K words, on a machine whose only output device is a vector display.

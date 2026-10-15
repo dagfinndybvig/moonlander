@@ -37,7 +37,7 @@ REGS = {"R0": 0, "R1": 1, "R2": 2, "R3": 3, "R4": 4, "R5": 5, "SP": 6, "PC": 7}
 # name -> (opcode, format)  format: 'd2' double, 'd1' single/branch-to-addr,
 # 'br' branch, 'none' no operand, 'sob' (unused here)
 DOUBLE = {"MOV": 0o01, "CMP": 0o02, "BIT": 0o03, "BIC": 0o04, "BIS": 0o05,
-          "MOV B": 0o11, "CMPB": 0o12, "BITB": 0o13, "BICB": 0o14, "BISB": 0o15,
+          "CMPB": 0o12, "BITB": 0o13, "BICB": 0o14, "BISB": 0o15,
           "MOVB": 0o11, "ADD": 0o06, "SUB": 0o16, "XOR": 0o07}
 SINGLE = {"CLR": 0o0050, "COM": 0o0051, "INC": 0o0052, "DEC": 0o0053,
           "NEG": 0o0054, "ADC": 0o0055, "SBC": 0o0056, "TST": 0o0057,
@@ -52,7 +52,7 @@ SINGLE = {"CLR": 0o0050, "COM": 0o0051, "INC": 0o0052, "DEC": 0o0053,
 BRANCH = {"BR": 0o000400, "BNE": 0o001000, "BEQ": 0o001400, "BGE": 0o002000,
           "BLT": 0o002400, "BGT": 0o003000, "BLE": 0o003400, "BPL": 0o100000,
           "BMI": 0o100400, "BHI": 0o101000, "BLOS": 0o101400, "BVC": 0o102000,
-          "BVS": 0o102400, "BCC": 0o103000, "BCS": 0o103400, "BLS": 0o103400}
+          "BVS": 0o102400, "BCC": 0o103000, "BCS": 0o103400}
 NOOPERAND = {"WAIT": 0o000001, "RTI": 0o000002, "HALT": 0o000000, "RESET": 0o000005,
              "CLC": 0o000241, "SEC": 0o000242, "CLV": 0o000244, "SEV": 0o000245,
              "CLZ": 0o000250, "SEZ": 0o000251, "CLN": 0o000252, "SEN": 0o000253}
@@ -179,8 +179,6 @@ class Asm:
             self.fix(self.cur - 2, "brw", ops[0]); return
         if u in DOUBLE:
             op = DOUBLE[u]
-            if u in ("ADD", "SUB") or (op & 0o170000 == 0o010000 and False):
-                pass
             if u in ("ADD", "SUB", "XOR"):
                 # strict forms: ADD/SUB word-only, src any, dst any
                 s = self.operand(ops[0]); d = self.operand(ops[1])

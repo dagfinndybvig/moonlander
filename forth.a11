@@ -61,6 +61,15 @@ BANNER: .ASCII "GT40 FORTH"
 ; ---- QUIT: read a line, interpret it, repeat --------------------------------
 
 QUIT:   MOV #RP0, R5
+        TST @#STATE
+        BEQ QUIT1
+        MOV @#OLDDP, @#DPPTR        ; a definition unfinished at the end of
+        MOV @#OLDDIC, @#LATEST      ; its line is discarded, as an error
+        MOV #0o77, R0               ; discards one; '?' says so
+        JSR PC, EMIT
+        JSR PC, DOCR
+        MOV #SP0, SP
+QUIT1:
         CLR @#STATE
         CLR @#INPTR
         MOV #TIB, R1
@@ -77,9 +86,14 @@ QRD:    JSR PC, KEY
         MOVB R0, (R1)+
         BR QRD
 QRBS:   CMP R1, #TIB
-        BLS QRD         ; empty line, nothing to erase
+        BLOS QRD        ; empty line, nothing to erase
         TST @#CURCOL
-        BEQ QRD         ; column 0: no character to erase on this row
+        BNE QRBS1       ; erase at the previous column of this row
+        TST @#CURROW
+        BEQ QRD         ; no previous row (cannot happen after a wrap)
+        DEC @#CURROW    ; the line wrapped: the character to erase is at
+        MOV #32., @#CURCOL      ; the end of the previous row
+QRBS1:
         DEC @#CURCOL
         DEC R1
         MOV #0o40, R0
@@ -109,15 +123,22 @@ QERR1:  MOV #0o77, R0   ; '?'
         JMP QUIT
 
 ; ---- INTERP: interpret one word from WORDBUF --------------------------------
-; FIND gives cfa (R0) and flags (R1). Immediate words always execute; other
-; words execute in interpret state and compile in compile state. Numbers
-; push or compile as LIT. Unknown words ring the bell via QERR.
+; FIND gives cfa (R0) and flags (R1): 0o200 immediate, 0o100 compile-only.
+; Compile-only words -- the control flow, ; and LITERAL -- are refused with
+; ? outside a definition, where their compiled branches would go nowhere.
+; Immediate words execute; other words execute in interpret state and
+; compile in compile state. Numbers push or compile as LIT. Unknown words
+; ring the bell via QERR.
 
 INTERP: MOV (SP)+, @#INTRET         ; save return, leave the data stack clean
         JSR PC, FIND
         TST R0
         BEQ INUM
-        BIT #0o200, R1              ; immediate?
+        BIT #0o100, R1              ; compile-only?
+        BEQ INTCO
+        TST @#STATE
+        BEQ IQERR                   ; control flow outside a definition
+INTCO:  BIT #0o200, R1              ; immediate?
         BNE IEXEC
         TST @#STATE
         BEQ IEXEC
@@ -688,7 +709,7 @@ COLNC:  JSR PC, WORD                ; read the name into WORDBUF
         MOV #1, @#STATE
         JMP NEXT
 
-        .HEAD ";", SEMIC, 0o200
+        .HEAD ";", SEMIC, 0o300
 SEMIC:  MOV #EXITCFA, -(SP)
         JSR PC, CC
         CLR @#STATE
@@ -720,13 +741,13 @@ IMMC:   MOV @#LATEST, R0
         BISB #0o200, 3(R0)
         JMP NEXT
 
-        .HEAD "LITERAL", LITW, 0o200
+        .HEAD "LITERAL", LITW, 0o300
 LITW:   MOV #LITCFA, -(SP)
         JSR PC, CC
         JSR PC, CC
         JMP NEXT
 
-        .HEAD "IF", IFW, 0o200
+        .HEAD "IF", IFW, 0o300
 IFW:    MOV #QBRCFA, -(SP)          ; IF is a zero-branch: jump if false
         JSR PC, CC
         MOV @#DPPTR, -(SP)          ; the offset cell, kept on the stack
@@ -734,7 +755,7 @@ IFW:    MOV #QBRCFA, -(SP)          ; IF is a zero-branch: jump if false
         JSR PC, CC
         JMP NEXT
 
-        .HEAD "ELSE", ELSEW, 0o200
+        .HEAD "ELSE", ELSEW, 0o300
 ELSEW:  MOV #BRCFA, -(SP)
         JSR PC, CC
         MOV @#DPPTR, -(SP)          ; this ELSE's offset cell
@@ -745,9 +766,11 @@ ELSEW:  MOV #BRCFA, -(SP)
         SUB R1, R2
         SUB #2, R2                  ; IP lands past IF's cell
         MOV R2, (R1)                ; patch IF to branch here
+        MOV (SP), 2(SP)             ; drop IF's cell: THEN expects only
+        TST (SP)+                   ; ELSE's to remain
         JMP NEXT
 
-        .HEAD "THEN", THENW, 0o200
+        .HEAD "THEN", THENW, 0o300
 THENW:  MOV (SP)+, R0
         MOV @#DPPTR, R1
         SUB R0, R1
@@ -755,11 +778,11 @@ THENW:  MOV (SP)+, R0
         MOV R1, (R0)
         JMP NEXT
 
-        .HEAD "BEGIN", BEGINW, 0o200
+        .HEAD "BEGIN", BEGINW, 0o300
 BEGINW: MOV @#DPPTR, -(SP)
         JMP NEXT
 
-        .HEAD "UNTIL", UNTILW, 0o200
+        .HEAD "UNTIL", UNTILW, 0o300
 UNTILW: MOV #QBRCFA, -(SP)
         JSR PC, CC
         MOV @#DPPTR, R1
@@ -770,7 +793,7 @@ UNTILW: MOV #QBRCFA, -(SP)
         JSR PC, CC
         JMP NEXT
 
-        .HEAD "WHILE", WHILEW, 0o200
+        .HEAD "WHILE", WHILEW, 0o300
 WHILEW: MOV #QBRCFA, -(SP)          ; branch out when the flag is false
         JSR PC, CC
         CLR -(SP)                   ; reserve the offset cell
@@ -780,7 +803,7 @@ WHILEW: MOV #QBRCFA, -(SP)          ; branch out when the flag is false
         MOV R0, -(SP)
         JMP NEXT
 
-        .HEAD "REPEAT", REPEATW, 0o200
+        .HEAD "REPEAT", REPEATW, 0o300
 REPEATW: MOV (SP)+, R0              ; WHILE's offset cell
         MOV (SP)+, R1               ; BEGIN's address
         MOV R0, -(SP)               ; WHILE's cell, patched below
@@ -798,13 +821,13 @@ REPEATW: MOV (SP)+, R0              ; WHILE's offset cell
         MOV R2, (R0)                ; patch WHILE to here
         JMP NEXT
 
-        .HEAD "DO", DOW, 0o200
+        .HEAD "DO", DOW, 0o300
 DOW:    MOV #DOCFA, -(SP)
         JSR PC, CC
         MOV @#DPPTR, -(SP)          ; loop body start
         JMP NEXT
 
-        .HEAD "LOOP", LOOPW, 0o200
+        .HEAD "LOOP", LOOPW, 0o300
 LOOPW:  MOV #LOOPCFA, -(SP)
         JSR PC, CC
         MOV @#DPPTR, R1
