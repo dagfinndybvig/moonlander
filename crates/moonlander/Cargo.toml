@@ -11,4 +11,3 @@ gt40 = { path = "../gt40" }
 [dev-dependencies]
 kd11b = { path = "../kd11b" }
 png = "0.17"
-rayon = "1"
