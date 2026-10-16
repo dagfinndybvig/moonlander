@@ -18,6 +18,8 @@ The book that carried the language beyond the observatories was Leo Brodie's *St
 
 The GT40 came out in 1972 and Moonlander was written in February 1973, so a PDP-11 Forth of exactly this period is not a fantasy — NRAO and FORTH, Inc. were running Forth on PDP-11s that year. Ours is not a port of any of them. It is written from scratch, in PDP-11 assembly, to fit this machine and to be readable alongside the Moonlander source in this repository.
 
+You can now both code and game on the same system like it was 1973. 
+
 ## The system
 
 The kernel is `forth.a11`, about 1,200 words of machine code, assembled by `asm11.py` — a small two-pass assembler written for this project because the period tools are not on hand — and packaged by `build-forth.py` into the same absolute paper-tape format the GT40's loader used, and that this repository's emulator reads:
