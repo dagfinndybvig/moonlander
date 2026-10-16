@@ -837,3 +837,7 @@ LOOPW:  MOV #LOOPCFA, -(SP)
         MOV R0, -(SP)
         JSR PC, CC
         JMP NEXT
+
+        .HEAD "BYE", BYEC
+BYEC:   .WORD 0o000000              ; HALT: the processor stops, the VT11
+                                    ; keeps its picture, R loads again

@@ -69,12 +69,15 @@ Numbers are 16-bit signed integers, printed in decimal. There is no floating poi
 | `0= 1+ 1- +!` | flags and counters |
 | `HERE ALLOT ,` | the dictionary as an allocation arena |
 | `EMIT KEY CR .` | the console and the screen |
+| `BYE` | halt the processor |
 | `: ;` | define a word |
 | `VARIABLE CONSTANT CREATE` | defining words |
 | `IMMEDIATE LITERAL` | compilation control |
 | `IF ELSE THEN` | conditionals |
 | `BEGIN UNTIL` `BEGIN WHILE REPEAT` | general loops |
 | `DO LOOP` | counted loops, with `I` as the index |
+
+`BYE` stops the machine: the processor halts, the VT11 keeps the picture on the tube, and in the desktop program a banner says the processor stopped while `R` loads the Forth again.
 
 A few sessions' worth, in one place:
 

@@ -702,3 +702,5 @@
 006054          MOV R0, -(SP)
 006056          JSR PC, CC
 006062          JMP NEXT
+006066          .HEAD "BYE", BYEC
+006100  BYEC:   .WORD 0o000000              ; HALT: the processor stops, the VT11
