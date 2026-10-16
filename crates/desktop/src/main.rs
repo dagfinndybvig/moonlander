@@ -217,7 +217,9 @@ impl App {
         // come from the text the layout produced, so they are what the
         // key meant to type, not what a US layout would have put there;
         // Enter and Backspace are positions, as terminals always had.
-        if self.cfg.image.is_some() && pressed && !repeat {
+        // When the processor has stopped, no console is listening, and
+        // the keys are commands again: the banner promises R.
+        if self.cfg.image.is_some() && pressed && !repeat && self.link.lock().unwrap().halted.is_none() {
             let c = match code {
                 KeyCode::Enter => Some(0o15),
                 KeyCode::Backspace => Some(0o177),
