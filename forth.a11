@@ -402,7 +402,7 @@ WRDCH:  TST R2
         MOV #WORDBUF+1, R0
         CLR R3
 WRDCP:  CMP R3, #17.
-        BGE WRDDN       ; name cap: 17 chars fit before the kernel cells
+        BGE WRDCAP      ; name cap: 17 chars fit before the kernel cells
         CMP R2, #0o141              ; 'a'
         BLT WRDST
         CMP R2, #0o172              ; 'z'
@@ -420,6 +420,13 @@ WRDDN:  SUB #TIB, R1
         MOV R1, @#INPTR
         MOVB R3, @#WORDBUF
         RTS PC
+WRDCAP: INC R1                      ; past the cap: skip the rest of the name
+        MOVB (R1), R2
+        BIC #0o177400, R2
+        BEQ WRDDN
+        CMP R2, #0o40
+        BNE WRDCAP
+        BR WRDDN
 WRDEOS: SUB #TIB, R1
         MOV R1, @#INPTR
         CLRB @#WORDBUF
@@ -517,7 +524,8 @@ CREATEHDR:
         CLRB (R1)+                  ; flags
         MOVB @#WORDBUF, R2
         BIC #0o177400, R2
-        MOV #WORDBUF+1, R3
+        BEQ HDRNO                   ; no name: a defining word at the end of
+        MOV #WORDBUF+1, R3          ; its line, answered with '?' like the rest
 CHD1:   MOVB (R3)+, (R1)+
         DEC R2
         BNE CHD1
@@ -528,6 +536,7 @@ CHD2:   MOV R0, (R1)+               ; cfa
         MOV R1, @#DPPTR
         MOV @#SCRATCH+4, @#LATEST
         RTS PC
+HDRNO:  JSR PC, QERR
 
 ; ---- kernel cells -------------------------------------------------------------
 
@@ -675,6 +684,8 @@ HEREC:  MOV @#DPPTR, -(SP)
 
         .HEAD "ALLOT", ALLOTC
 ALLOTC: ADD (SP)+, @#DPPTR
+        INC @#DPPTR
+        BIC #1, @#DPPTR             ; a cell is a word: DP stays even
         JMP NEXT
 
         .HEAD ",", COMMAC

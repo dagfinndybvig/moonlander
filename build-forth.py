@@ -108,7 +108,7 @@ def main():
     a.write(out, start)
     print(f"assembled {len(a.mem)} words -> {out}, start {start:06o}")
     hi = max(a.mem)
-    print(f"memory used: 0{a.cur:05o} words of code/data, top address {hi:06o}")
+    print(f"memory used: 0{a.cur:05o} bytes of code/data, top address {hi:06o}")
     if "--list" in sys.argv:
         lst = sys.argv[sys.argv.index("--list") + 1]
         with open(lst, "w") as f:

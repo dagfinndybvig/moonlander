@@ -106,7 +106,7 @@ T
 
 `DO` runs its body at least once and steps until the index reaches the limit. `BEGIN ... UNTIL` repeats until the flag is true; `BEGIN ... WHILE ... REPEAT` tests at the top. `IF` consumes a flag and compiles a conditional branch — inside a definition, `IF`, `ELSE`, `THEN`, `BEGIN`, `DO` and their partners are immediate words that execute at compile time and patch the branch offsets into the definition as it is being built. That mechanism, more than any other, is what makes a Forth compiler small: control flow is just words that compile other words. (`I` reads the top of the return stack, so a `>R` inside a loop body hides the index from it: ask for `I` only outside any `>R` ... `R>` pair.)
 
-A word the system does not know — inside a definition or out — prints `?` and returns to the prompt. If it happened inside a definition, the half-built definition is discarded, so a mistyped name costs nothing but the typing. The same `?` answers two more mistakes: a control-flow word — `IF`, `DO`, `;` — used outside a definition, where the branch it would compile leads nowhere; and a definition left unfinished at the end of its line, which is discarded as an error discards one, with nothing broken left in the dictionary.
+A word the system does not know — inside a definition or out — prints `?` and returns to the prompt. If it happened inside a definition, the half-built definition is discarded, so a mistyped name costs nothing but the typing. The same `?` answers three more mistakes: a control-flow word — `IF`, `DO`, `;` — used outside a definition, where the branch it would compile leads nowhere; a defining word — `:`, `VARIABLE`, `CONSTANT`, `CREATE` — with no name after it; and a definition left unfinished at the end of its line, which is discarded as an error discards one, with nothing broken left in the dictionary.
 
 `CREATE` and `HERE` extend the language to data:
 
@@ -118,7 +118,7 @@ TABLE 2 + @ .
 1 
 ```
 
-`CREATE` makes a word whose body is whatever you allot next; `,` compiles a number into the dictionary at `HERE`, and the next number lives two bytes further on, since a cell is a word. This is the whole story of data structures in Forth, and in 1973 it was a perfectly ordinary way to build a table.
+`CREATE` makes a word whose body is whatever you allot next; `,` compiles a number into the dictionary at `HERE`, and the next number lives two bytes further on, since a cell is a word. `ALLOT` counts bytes and always ends on a whole word, since a cell is one. This is the whole story of data structures in Forth, and in 1973 it was a perfectly ordinary way to build a table.
 
 ## Inside
 

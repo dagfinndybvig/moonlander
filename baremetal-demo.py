@@ -17,7 +17,7 @@
 #   3000    top of stack
 
 import sys, os
-sys.path.insert(0, r"C:\Users\dybvig\Reverse\moonlander\oracle\tools")
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "oracle", "tools"))
 import lda as ldamod
 
 SIZE  = 0o1100

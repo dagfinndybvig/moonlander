@@ -135,8 +135,8 @@ class Asm:
             return (0o37, [("w", t[2:])])
         if t.startswith("#"):
             return (0o27, [("w", t[1:])])
-        if t.startswith("@-"):
-            r = self.reg(t[2:]); return (0o50 + r, [])
+        if t.startswith("@-(") and t.endswith(")"):
+            r = self.reg(t[3:-1]); return (0o50 + r, [])
         if t.startswith("-("):
             r = self.reg(t[2:-1]); return (0o40 + r, [])
         if t.startswith("@(") and t.endswith("+"):

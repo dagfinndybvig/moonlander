@@ -326,7 +326,7 @@
 002704          MOV #WORDBUF+1, R0
 002710          CLR R3
 002712  WRDCP:  CMP R3, #17.
-002716          BGE WRDDN       ; name cap: 17 chars fit before the kernel cells
+002716          BGE WRDCAP      ; name cap: 17 chars fit before the kernel cells
 002720          CMP R2, #0o141              ; 'a'
 002724          BLT WRDST
 002726          CMP R2, #0o172              ; 'z'
@@ -344,106 +344,115 @@
 002770          MOV R1, @#INPTR
 002774          MOVB R3, @#WORDBUF
 003000          RTS PC
-003002  WRDEOS: SUB #TIB, R1
-003006          MOV R1, @#INPTR
-003012          CLRB @#WORDBUF
-003016          RTS PC
-003020  FIND:   MOV @#LATEST, R2
-003024  FND1:   TST R2
-003026          BEQ FNDNO
-003030          MOVB 2(R2), R0
-003034          BIC #0o177400, R0
-003040          MOVB @#WORDBUF, R1
-003044          BIC #0o177400, R1
-003050          CMP R0, R1
-003052          BNE FNDNEXT
-003054          MOV R2, R3
-003056          ADD #4, R3                  ; header characters
-003062          MOV #WORDBUF+1, R1
-003066  FNDC:   CMPB (R3)+, (R1)+
-003070          BNE FNDNEXT
-003072          DEC R0
-003074          BNE FNDC
-003076          MOV R2, R0                  ; match: cfa = head + 4 + len rounded up
-003100          ADD #4, R0
-003104          MOVB 2(R2), R1
-003110          BIC #0o177400, R1
-003114          INC R1
-003116          BIC #1, R1
-003122          ADD R1, R0
-003124          MOVB 3(R2), R1              ; flags
-003130          BIC #0o177400, R1
-003134          RTS PC
-003136  FNDNEXT: MOV (R2), R2
-003140          BR FND1
-003142  FNDNO:  CLR R0
-003144          RTS PC
-003146  NUMB:   CLR @#NFLG
-003152          MOVB @#WORDBUF, R2
-003156          BIC #0o177400, R2
-003162          BEQ NUMNO
-003164          MOV #WORDBUF+1, R3
-003170          CLR R1
-003172          MOVB (R3), R0
-003174          BIC #0o177400, R0
-003200          CMP R0, #0o55               ; '-'
-003204          BNE NUML
-003206          INC @#NFLG
-003212          DEC R2
-003214          BEQ NUMNO
-003216          INC R3
-003220  NUML:   MOVB (R3)+, R0
-003222          BIC #0o177400, R0
-003226          SUB #0o60, R0
-003232          BMI NUMNO
-003234          CMP R0, #9.
-003240          BGT NUMNO
-003242          MOV R1, -(SP)               ; acc = acc*10 + digit
-003244          ASL (SP)
-003246          ASL R1
-003250          ASL R1
-003252          ASL R1
-003254          ADD (SP)+, R1
-003256          ADD R0, R1
-003260          DEC R2
-003262          BNE NUML
-003264          TST @#NFLG
-003270          BEQ NUMOK
-003272          NEG R1
-003274  NUMOK:  MOV #1, R0
-003300          RTS PC
-003302  NUMNO:  CLR R0
-003304          RTS PC
-003306  CC:     MOV 2(SP), R0               ; the cell to compile
-003312          MOV (SP)+, R1               ; return address -> R1
-003314          MOV R1, (SP)                ; store it over the cell; RTS consumes it
-003316          MOV @#DPPTR, R1
-003322          MOV R0, (R1)
-003324          ADD #2, @#DPPTR
-003332          RTS PC
-003334  CREATEHDR:
-003334          MOV 2(SP), R0               ; the cfa
-003340          MOV (SP)+, R1               ; return address -> R1
-003342          MOV R1, (SP)                ; store it over the cfa; RTS consumes it
-003344          MOV @#DPPTR, R1
-003350          MOV R1, @#SCRATCH+4         ; header address
-003354          MOV @#LATEST, (R1)+         ; link
-003360          MOVB @#WORDBUF, (R1)+       ; length
-003364          CLRB (R1)+                  ; flags
-003366          MOVB @#WORDBUF, R2
-003372          BIC #0o177400, R2
-003376          MOV #WORDBUF+1, R3
-003402  CHD1:   MOVB (R3)+, (R1)+
-003404          DEC R2
-003406          BNE CHD1
-003410          BIT #1, R1
-003414          BEQ CHD2
-003416          CLRB (R1)+                  ; pad to even
-003420  CHD2:   MOV R0, (R1)+               ; cfa
-003422          MOV R1, @#DPPTR
-003426          MOV @#SCRATCH+4, @#LATEST
-003434          RTS PC
-003436          .ORG 0o32120
+003002  WRDCAP: INC R1                      ; past the cap: skip the rest of the name
+003004          MOVB (R1), R2
+003006          BIC #0o177400, R2
+003012          BEQ WRDDN
+003014          CMP R2, #0o40
+003020          BNE WRDCAP
+003022          BR WRDDN
+003024  WRDEOS: SUB #TIB, R1
+003030          MOV R1, @#INPTR
+003034          CLRB @#WORDBUF
+003040          RTS PC
+003042  FIND:   MOV @#LATEST, R2
+003046  FND1:   TST R2
+003050          BEQ FNDNO
+003052          MOVB 2(R2), R0
+003056          BIC #0o177400, R0
+003062          MOVB @#WORDBUF, R1
+003066          BIC #0o177400, R1
+003072          CMP R0, R1
+003074          BNE FNDNEXT
+003076          MOV R2, R3
+003100          ADD #4, R3                  ; header characters
+003104          MOV #WORDBUF+1, R1
+003110  FNDC:   CMPB (R3)+, (R1)+
+003112          BNE FNDNEXT
+003114          DEC R0
+003116          BNE FNDC
+003120          MOV R2, R0                  ; match: cfa = head + 4 + len rounded up
+003122          ADD #4, R0
+003126          MOVB 2(R2), R1
+003132          BIC #0o177400, R1
+003136          INC R1
+003140          BIC #1, R1
+003144          ADD R1, R0
+003146          MOVB 3(R2), R1              ; flags
+003152          BIC #0o177400, R1
+003156          RTS PC
+003160  FNDNEXT: MOV (R2), R2
+003162          BR FND1
+003164  FNDNO:  CLR R0
+003166          RTS PC
+003170  NUMB:   CLR @#NFLG
+003174          MOVB @#WORDBUF, R2
+003200          BIC #0o177400, R2
+003204          BEQ NUMNO
+003206          MOV #WORDBUF+1, R3
+003212          CLR R1
+003214          MOVB (R3), R0
+003216          BIC #0o177400, R0
+003222          CMP R0, #0o55               ; '-'
+003226          BNE NUML
+003230          INC @#NFLG
+003234          DEC R2
+003236          BEQ NUMNO
+003240          INC R3
+003242  NUML:   MOVB (R3)+, R0
+003244          BIC #0o177400, R0
+003250          SUB #0o60, R0
+003254          BMI NUMNO
+003256          CMP R0, #9.
+003262          BGT NUMNO
+003264          MOV R1, -(SP)               ; acc = acc*10 + digit
+003266          ASL (SP)
+003270          ASL R1
+003272          ASL R1
+003274          ASL R1
+003276          ADD (SP)+, R1
+003300          ADD R0, R1
+003302          DEC R2
+003304          BNE NUML
+003306          TST @#NFLG
+003312          BEQ NUMOK
+003314          NEG R1
+003316  NUMOK:  MOV #1, R0
+003322          RTS PC
+003324  NUMNO:  CLR R0
+003326          RTS PC
+003330  CC:     MOV 2(SP), R0               ; the cell to compile
+003334          MOV (SP)+, R1               ; return address -> R1
+003336          MOV R1, (SP)                ; store it over the cell; RTS consumes it
+003340          MOV @#DPPTR, R1
+003344          MOV R0, (R1)
+003346          ADD #2, @#DPPTR
+003354          RTS PC
+003356  CREATEHDR:
+003356          MOV 2(SP), R0               ; the cfa
+003362          MOV (SP)+, R1               ; return address -> R1
+003364          MOV R1, (SP)                ; store it over the cfa; RTS consumes it
+003366          MOV @#DPPTR, R1
+003372          MOV R1, @#SCRATCH+4         ; header address
+003376          MOV @#LATEST, (R1)+         ; link
+003402          MOVB @#WORDBUF, (R1)+       ; length
+003406          CLRB (R1)+                  ; flags
+003410          MOVB @#WORDBUF, R2
+003414          BIC #0o177400, R2
+003420          BEQ HDRNO                   ; no name: a defining word at the end of
+003422          MOV #WORDBUF+1, R3          ; its line, answered with '?' like the rest
+003426  CHD1:   MOVB (R3)+, (R1)+
+003430          DEC R2
+003432          BNE CHD1
+003434          BIT #1, R1
+003440          BEQ CHD2
+003442          CLRB (R1)+                  ; pad to even
+003444  CHD2:   MOV R0, (R1)+               ; cfa
+003446          MOV R1, @#DPPTR
+003452          MOV @#SCRATCH+4, @#LATEST
+003460          RTS PC
+003462  HDRNO:  JSR PC, QERR
+003466          .ORG 0o32120
 032120  SCRATCH: .BLKW 3                    ; trampoline (2 cells) + header temp
 032126  NFLG:    .BLKW 1
 032130  ZFLG:    .BLKW 1
@@ -561,146 +570,148 @@
 004622          JMP NEXT
 004626          .HEAD "ALLOT", ALLOTC
 004642  ALLOTC: ADD (SP)+, @#DPPTR
-004646          JMP NEXT
-004652          .HEAD ",", COMMAC
-004662  COMMAC: JSR PC, CC
-004666          JMP NEXT
-004672          .HEAD "EMIT", EMITC
-004704  EMITC:  MOV (SP)+, R0
-004706          JSR PC, EMIT
-004712          JMP NEXT
-004716          .HEAD "KEY", KEYC
-004730  KEYC:   JSR PC, KEY
-004734          MOV R0, -(SP)
-004736          JMP NEXT
-004742          .HEAD "CR", CRC
-004752  CRC:    JSR PC, DOCR
-004756          JMP NEXT
-004762          .HEAD ".", DOTC
-004772  DOTC:   MOV (SP)+, R0
-004774          JSR PC, DOT
-005000          JMP NEXT
-005004          .HEAD ":", COLNC
-005014  COLNC:  JSR PC, WORD                ; read the name into WORDBUF
-005020          MOV @#DPPTR, @#OLDDP        ; an error in the body discards the definition
-005026          MOV @#LATEST, @#OLDDIC
-005034          MOV #DOCOL, -(SP)
-005040          JSR PC, CREATEHDR
-005044          MOV #1, @#STATE
-005052          JMP NEXT
-005056          .HEAD ";", SEMIC, 0o300
-005066  SEMIC:  MOV #EXITCFA, -(SP)
-005072          JSR PC, CC
-005076          CLR @#STATE
-005102          JMP NEXT
-005106          .HEAD "VARIABLE", VARC
-005124  VARC:   JSR PC, WORD                ; read the name into WORDBUF
-005130          MOV #DOVAR, -(SP)
-005134          JSR PC, CREATEHDR
-005140          CLR -(SP)
-005142          JSR PC, CC
-005146          JMP NEXT
-005152          .HEAD "CONSTANT", CONSC
-005170  CONSC:  JSR PC, WORD                ; read the name into WORDBUF
-005174          MOV #DOCON, -(SP)
-005200          JSR PC, CREATEHDR
-005204          JSR PC, CC
-005210          JMP NEXT
-005214          .HEAD "CREATE", CREATEC
-005230  CREATEC: JSR PC, WORD               ; read the name into WORDBUF
-005234          MOV #DOVAR, -(SP)
-005240          JSR PC, CREATEHDR
-005244          JMP NEXT
-005250          .HEAD "IMMEDIATE", IMMC
-005270  IMMC:   MOV @#LATEST, R0
-005274          BISB #0o200, 3(R0)
-005302          JMP NEXT
-005306          .HEAD "LITERAL", LITW, 0o300
-005324  LITW:   MOV #LITCFA, -(SP)
-005330          JSR PC, CC
-005334          JSR PC, CC
-005340          JMP NEXT
-005344          .HEAD "IF", IFW, 0o300
-005354  IFW:    MOV #QBRCFA, -(SP)          ; IF is a zero-branch: jump if false
-005360          JSR PC, CC
-005364          MOV @#DPPTR, -(SP)          ; the offset cell, kept on the stack
-005370          CLR -(SP)
+004646          INC @#DPPTR
+004652          BIC #1, @#DPPTR             ; a cell is a word: DP stays even
+004660          JMP NEXT
+004664          .HEAD ",", COMMAC
+004674  COMMAC: JSR PC, CC
+004700          JMP NEXT
+004704          .HEAD "EMIT", EMITC
+004716  EMITC:  MOV (SP)+, R0
+004720          JSR PC, EMIT
+004724          JMP NEXT
+004730          .HEAD "KEY", KEYC
+004742  KEYC:   JSR PC, KEY
+004746          MOV R0, -(SP)
+004750          JMP NEXT
+004754          .HEAD "CR", CRC
+004764  CRC:    JSR PC, DOCR
+004770          JMP NEXT
+004774          .HEAD ".", DOTC
+005004  DOTC:   MOV (SP)+, R0
+005006          JSR PC, DOT
+005012          JMP NEXT
+005016          .HEAD ":", COLNC
+005026  COLNC:  JSR PC, WORD                ; read the name into WORDBUF
+005032          MOV @#DPPTR, @#OLDDP        ; an error in the body discards the definition
+005040          MOV @#LATEST, @#OLDDIC
+005046          MOV #DOCOL, -(SP)
+005052          JSR PC, CREATEHDR
+005056          MOV #1, @#STATE
+005064          JMP NEXT
+005070          .HEAD ";", SEMIC, 0o300
+005100  SEMIC:  MOV #EXITCFA, -(SP)
+005104          JSR PC, CC
+005110          CLR @#STATE
+005114          JMP NEXT
+005120          .HEAD "VARIABLE", VARC
+005136  VARC:   JSR PC, WORD                ; read the name into WORDBUF
+005142          MOV #DOVAR, -(SP)
+005146          JSR PC, CREATEHDR
+005152          CLR -(SP)
+005154          JSR PC, CC
+005160          JMP NEXT
+005164          .HEAD "CONSTANT", CONSC
+005202  CONSC:  JSR PC, WORD                ; read the name into WORDBUF
+005206          MOV #DOCON, -(SP)
+005212          JSR PC, CREATEHDR
+005216          JSR PC, CC
+005222          JMP NEXT
+005226          .HEAD "CREATE", CREATEC
+005242  CREATEC: JSR PC, WORD               ; read the name into WORDBUF
+005246          MOV #DOVAR, -(SP)
+005252          JSR PC, CREATEHDR
+005256          JMP NEXT
+005262          .HEAD "IMMEDIATE", IMMC
+005302  IMMC:   MOV @#LATEST, R0
+005306          BISB #0o200, 3(R0)
+005314          JMP NEXT
+005320          .HEAD "LITERAL", LITW, 0o300
+005336  LITW:   MOV #LITCFA, -(SP)
+005342          JSR PC, CC
+005346          JSR PC, CC
+005352          JMP NEXT
+005356          .HEAD "IF", IFW, 0o300
+005366  IFW:    MOV #QBRCFA, -(SP)          ; IF is a zero-branch: jump if false
 005372          JSR PC, CC
-005376          JMP NEXT
-005402          .HEAD "ELSE", ELSEW, 0o300
-005414  ELSEW:  MOV #BRCFA, -(SP)
-005420          JSR PC, CC
-005424          MOV @#DPPTR, -(SP)          ; this ELSE's offset cell
-005430          CLR -(SP)
+005376          MOV @#DPPTR, -(SP)          ; the offset cell, kept on the stack
+005402          CLR -(SP)
+005404          JSR PC, CC
+005410          JMP NEXT
+005414          .HEAD "ELSE", ELSEW, 0o300
+005426  ELSEW:  MOV #BRCFA, -(SP)
 005432          JSR PC, CC
-005436          MOV 2(SP), R1               ; IF's cell, one below
-005442          MOV @#DPPTR, R2
-005446          SUB R1, R2
-005450          SUB #2, R2                  ; IP lands past IF's cell
-005454          MOV R2, (R1)                ; patch IF to branch here
-005456          MOV (SP), 2(SP)             ; drop IF's cell: THEN expects only
-005462          TST (SP)+                   ; ELSE's to remain
-005464          JMP NEXT
-005470          .HEAD "THEN", THENW, 0o300
-005502  THENW:  MOV (SP)+, R0
-005504          MOV @#DPPTR, R1
-005510          SUB R0, R1
-005512          SUB #2, R1                  ; IP lands past the offset cell
-005516          MOV R1, (R0)
-005520          JMP NEXT
-005524          .HEAD "BEGIN", BEGINW, 0o300
-005540  BEGINW: MOV @#DPPTR, -(SP)
-005544          JMP NEXT
-005550          .HEAD "UNTIL", UNTILW, 0o300
-005564  UNTILW: MOV #QBRCFA, -(SP)
-005570          JSR PC, CC
-005574          MOV @#DPPTR, R1
-005600          ADD #2, R1                  ; IP lands past the offset cell
-005604          MOV (SP)+, R0
-005606          SUB R1, R0
-005610          MOV R0, -(SP)
-005612          JSR PC, CC
-005616          JMP NEXT
-005622          .HEAD "WHILE", WHILEW, 0o300
-005636  WHILEW: MOV #QBRCFA, -(SP)          ; branch out when the flag is false
-005642          JSR PC, CC
-005646          CLR -(SP)                   ; reserve the offset cell
-005650          JSR PC, CC
-005654          MOV @#DPPTR, R0             ; the placeholder's address (CC clobbers R0)
-005660          SUB #2, R0
-005664          MOV R0, -(SP)
-005666          JMP NEXT
-005672          .HEAD "REPEAT", REPEATW, 0o300
-005706  REPEATW: MOV (SP)+, R0              ; WHILE's offset cell
-005710          MOV (SP)+, R1               ; BEGIN's address
-005712          MOV R0, -(SP)               ; WHILE's cell, patched below
-005714          MOV R1, -(SP)               ; BEGIN's address survives the CC
-005716          MOV #BRCFA, -(SP)
-005722          JSR PC, CC                  ; back-branch cell
-005726          MOV @#DPPTR, R2
-005732          ADD #2, R2                  ; IP lands past this offset cell
-005736          SUB R2, (SP)                ; branch back to BEGIN
-005740          JSR PC, CC                  ; back-branch offset
-005744          MOV @#DPPTR, R2             ; final DP = the exit target
-005750          MOV (SP)+, R0               ; WHILE's cell
-005752          SUB R0, R2
-005754          SUB #2, R2                  ; IP lands past WHILE's cell
-005760          MOV R2, (R0)                ; patch WHILE to here
-005762          JMP NEXT
-005766          .HEAD "DO", DOW, 0o300
-005776  DOW:    MOV #DOCFA, -(SP)
-006002          JSR PC, CC
-006006          MOV @#DPPTR, -(SP)          ; loop body start
-006012          JMP NEXT
-006016          .HEAD "LOOP", LOOPW, 0o300
-006030  LOOPW:  MOV #LOOPCFA, -(SP)
-006034          JSR PC, CC
-006040          MOV @#DPPTR, R1
-006044          ADD #2, R1                  ; IP lands past the offset cell
-006050          MOV (SP)+, R0
-006052          SUB R1, R0
-006054          MOV R0, -(SP)
-006056          JSR PC, CC
-006062          JMP NEXT
-006066          .HEAD "BYE", BYEC
-006100  BYEC:   .WORD 0o000000              ; HALT: the processor stops, the VT11
+005436          MOV @#DPPTR, -(SP)          ; this ELSE's offset cell
+005442          CLR -(SP)
+005444          JSR PC, CC
+005450          MOV 2(SP), R1               ; IF's cell, one below
+005454          MOV @#DPPTR, R2
+005460          SUB R1, R2
+005462          SUB #2, R2                  ; IP lands past IF's cell
+005466          MOV R2, (R1)                ; patch IF to branch here
+005470          MOV (SP), 2(SP)             ; drop IF's cell: THEN expects only
+005474          TST (SP)+                   ; ELSE's to remain
+005476          JMP NEXT
+005502          .HEAD "THEN", THENW, 0o300
+005514  THENW:  MOV (SP)+, R0
+005516          MOV @#DPPTR, R1
+005522          SUB R0, R1
+005524          SUB #2, R1                  ; IP lands past the offset cell
+005530          MOV R1, (R0)
+005532          JMP NEXT
+005536          .HEAD "BEGIN", BEGINW, 0o300
+005552  BEGINW: MOV @#DPPTR, -(SP)
+005556          JMP NEXT
+005562          .HEAD "UNTIL", UNTILW, 0o300
+005576  UNTILW: MOV #QBRCFA, -(SP)
+005602          JSR PC, CC
+005606          MOV @#DPPTR, R1
+005612          ADD #2, R1                  ; IP lands past the offset cell
+005616          MOV (SP)+, R0
+005620          SUB R1, R0
+005622          MOV R0, -(SP)
+005624          JSR PC, CC
+005630          JMP NEXT
+005634          .HEAD "WHILE", WHILEW, 0o300
+005650  WHILEW: MOV #QBRCFA, -(SP)          ; branch out when the flag is false
+005654          JSR PC, CC
+005660          CLR -(SP)                   ; reserve the offset cell
+005662          JSR PC, CC
+005666          MOV @#DPPTR, R0             ; the placeholder's address (CC clobbers R0)
+005672          SUB #2, R0
+005676          MOV R0, -(SP)
+005700          JMP NEXT
+005704          .HEAD "REPEAT", REPEATW, 0o300
+005720  REPEATW: MOV (SP)+, R0              ; WHILE's offset cell
+005722          MOV (SP)+, R1               ; BEGIN's address
+005724          MOV R0, -(SP)               ; WHILE's cell, patched below
+005726          MOV R1, -(SP)               ; BEGIN's address survives the CC
+005730          MOV #BRCFA, -(SP)
+005734          JSR PC, CC                  ; back-branch cell
+005740          MOV @#DPPTR, R2
+005744          ADD #2, R2                  ; IP lands past this offset cell
+005750          SUB R2, (SP)                ; branch back to BEGIN
+005752          JSR PC, CC                  ; back-branch offset
+005756          MOV @#DPPTR, R2             ; final DP = the exit target
+005762          MOV (SP)+, R0               ; WHILE's cell
+005764          SUB R0, R2
+005766          SUB #2, R2                  ; IP lands past WHILE's cell
+005772          MOV R2, (R0)                ; patch WHILE to here
+005774          JMP NEXT
+006000          .HEAD "DO", DOW, 0o300
+006010  DOW:    MOV #DOCFA, -(SP)
+006014          JSR PC, CC
+006020          MOV @#DPPTR, -(SP)          ; loop body start
+006024          JMP NEXT
+006030          .HEAD "LOOP", LOOPW, 0o300
+006042  LOOPW:  MOV #LOOPCFA, -(SP)
+006046          JSR PC, CC
+006052          MOV @#DPPTR, R1
+006056          ADD #2, R1                  ; IP lands past the offset cell
+006062          MOV (SP)+, R0
+006064          SUB R1, R0
+006066          MOV R0, -(SP)
+006070          JSR PC, CC
+006074          JMP NEXT
+006100          .HEAD "BYE", BYEC
+006112  BYEC:   .WORD 0o000000              ; HALT: the processor stops, the VT11
